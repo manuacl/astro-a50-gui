@@ -22,12 +22,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install lint deps
-        # ruff only — runtime deps (PyQt6, pyusb, simple-hexdump) aren't
-        # needed for these tests because they all bypass Qt and the
-        # device via mocks/__new__. If a future test exercises a real Qt
-        # widget, add the runtime deps here.
-        run: pip install ruff
+      - name: Install lint + runtime deps
+        # ruff for the lint step. PyQt6/pyusb/simple-hexdump are needed
+        # because tests.py imports modules that load PyQt6 at import
+        # time (e.g. i18n.py → QLocale) and vendor.eh_fifty (→ usb,
+        # simple_hexdump), even though the test bodies bypass Qt and
+        # the device via mocks/__new__.
+        run: pip install ruff PyQt6 pyusb simple-hexdump
 
       - name: ruff check
         # Excludes vendor/ — vendored third-party code is reviewed at
