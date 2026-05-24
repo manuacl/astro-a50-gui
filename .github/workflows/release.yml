@@ -1,0 +1,60 @@
+name: Release
+
+# Triggers on push of a v* tag (created by version.yml at merge time).
+# Creates a GitHub Release with auto-generated notes; GitHub itself
+# attaches the source tarball + zip to the release. Flathub's manifest
+# can reference that source.tar.gz URL when the Flatpak packaging
+# effort lands.
+
+on:
+  push:
+    tags: ['v*']
+  # Manual re-run for a specific tag — useful when version.yml created
+  # the tag before release.yml was on main, or to retry a failed run.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Resolve tag + version
+        id: meta
+        env:
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG_NAME#v}"
+          echo "tag=$TAG_NAME"     >> $GITHUB_OUTPUT
+          echo "version=$VERSION"  >> $GITHUB_OUTPUT
+
+      - name: Verify pyproject.toml version matches tag
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if ! grep -q "^version = \"$VERSION\"$" pyproject.toml; then
+            echo "::error::pyproject.toml does not declare version=$VERSION"
+            grep '^version' pyproject.toml || true
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          gh release create "$TAG_NAME" \
+            --title "astro-a50-gui v$VERSION" \
+            --generate-notes

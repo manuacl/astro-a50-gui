@@ -1,0 +1,106 @@
+name: Vendor upstream check
+
+# Weekly poll: for each entry in vendor/__init__.py's _VENDORED_VERSIONS,
+# query PyPI's JSON API for the latest version. If different, open a
+# GitHub issue (idempotent — does nothing if an open issue for the
+# same drift already exists).
+#
+# The job is read-only against the repo (no commits), so it uses the
+# default GITHUB_TOKEN and doesn't need BUMP_TOKEN.
+
+on:
+  schedule:
+    - cron: '37 7 * * 1'   # Mondays at 07:37 UTC — off-peak hour
+  workflow_dispatch:        # manual trigger from the Actions UI
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Ensure 'vendor' label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create vendor --color 5319E7 \
+            --description "Vendored dependency drift" 2>/dev/null || true
+
+      - name: Compare vendored versions against PyPI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          python <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import urllib.request
+
+          sys.path.insert(0, ".")
+          from vendor import _VENDORED_VERSIONS
+
+          repo = os.environ["REPO"]
+          drifts = []
+          for pkg, vendored in _VENDORED_VERSIONS.items():
+              # PyPI normalises underscores to dashes in the URL path.
+              slug = pkg.replace("_", "-")
+              url = f"https://pypi.org/pypi/{slug}/json"
+              with urllib.request.urlopen(url, timeout=15) as r:
+                  data = json.load(r)
+              latest = data["info"]["version"]
+              status = "OK" if latest == vendored else "DRIFT"
+              print(f"{pkg}: vendored={vendored} pypi={latest} [{status}]")
+              if latest != vendored:
+                  drifts.append((pkg, vendored, latest))
+
+          if not drifts:
+              sys.exit(0)
+
+          for pkg, vendored, latest in drifts:
+              title = f"chore(vendor): {pkg} {latest} available (vendored: {vendored})"
+              # Is there already an open issue with the same title?
+              existing = subprocess.check_output(
+                  ["gh", "issue", "list",
+                   "--repo", repo,
+                   "--state", "open",
+                   "--search", f'in:title "{title}"',
+                   "--json", "number"],
+                  text=True,
+              )
+              if json.loads(existing):
+                  print(f"  issue already open for {pkg} {vendored} → {latest}, skipping")
+                  continue
+              body = (
+                  f"PyPI now ships `{pkg}` **{latest}** — the repo currently "
+                  f"vendors **{vendored}**.\n\n"
+                  f"To sync:\n"
+                  f"1. `pip download {pkg.replace('_', '-')}=={latest} --no-deps -d /tmp/`\n"
+                  f"2. Unpack the wheel, copy the `{pkg}.py` into `vendor/`.\n"
+                  f"3. Update `_VENDORED_VERSIONS['{pkg}']` in "
+                  f"`vendor/__init__.py` to `\"{latest}\"`.\n"
+                  f"4. Re-read `vendor/LICENSE.txt` against upstream in case "
+                  f"the license file changed.\n"
+                  f"5. Run `python tests.py` to confirm nothing broke.\n\n"
+                  f"_Opened automatically by `vendor-check.yml`._"
+              )
+              subprocess.run(
+                  ["gh", "issue", "create",
+                   "--repo", repo,
+                   "--title", title,
+                   "--body", body,
+                   "--label", "vendor"],
+                  check=True,
+              )
+              print(f"  opened issue for {pkg} {vendored} → {latest}")
+          PY
+

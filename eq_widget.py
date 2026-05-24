@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QHBoxLayout, QInputDialog, QMessageBox, QPushButton, QRadioButton,
 )
 
-from eh_fifty import Device
+from vendor.eh_fifty import Device
 
 from eq_meter import _EqMeter
 from i18n import t

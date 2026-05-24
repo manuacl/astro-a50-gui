@@ -9,7 +9,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
-from eh_fifty import Device
+from vendor.eh_fifty import Device
 
 
 class StatusWorker(QObject):

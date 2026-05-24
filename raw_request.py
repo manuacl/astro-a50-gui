@@ -7,7 +7,7 @@ Version format used by ACC: "<major u32 LE>.<minor u8>"
   * Headset firmware major: GET_HEADSET_FW_MAJOR response (4 bytes LE)
   * Headset firmware minor: GET_HEADSET_FW_MINOR (arg 0x0a) response (1 byte)
 """
-from eh_fifty import Device
+from vendor.eh_fifty import Device
 
 
 _OP_DEVICE_INFO = 0x03

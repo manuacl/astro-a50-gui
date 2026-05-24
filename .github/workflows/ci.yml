@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel in-progress runs of the same branch/PR — only the latest commit
+# needs to be green.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: ruff + unittest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install lint deps
+        # ruff only — runtime deps (PyQt6, pyusb, simple-hexdump) aren't
+        # needed for these tests because they all bypass Qt and the
+        # device via mocks/__new__. If a future test exercises a real Qt
+        # widget, add the runtime deps here.
+        run: pip install ruff
+
+      - name: ruff check
+        # Excludes vendor/ — vendored third-party code is reviewed at
+        # sync time, not on every PR.
+        run: ruff check --exclude vendor .
+
+      - name: No stray debug print() in committed code
+        # Quick gate: any top-level print(...) outside scripts/ or tests
+        # is almost certainly a forgotten debug call. The project uses
+        # PyQt logging / dialogs for real output. Tighten/relax this rule
+        # as conventions settle.
+        run: |
+          if grep -nE '^[[:space:]]*print\(' \
+               --include='*.py' \
+               --exclude-dir=vendor --exclude-dir=scripts --exclude-dir=.venv \
+               --exclude=tests.py \
+               -r .; then
+            echo "::error::stray print() statements found above — remove or move under scripts/"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: python tests.py

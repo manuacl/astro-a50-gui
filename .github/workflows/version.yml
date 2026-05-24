@@ -1,0 +1,126 @@
+name: Bump version
+
+# Triggers on push to main (= a PR has just been merged). Reads the
+# merged PR's bump:<level> label, bumps pyproject.toml's [project].version
+# accordingly, commits the change and creates the matching git tag.
+#
+# No label = no bump: the workflow exits cleanly without touching anything.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      # BUMP_TOKEN is a PAT (classic, scope=repo) owned by an admin.
+      # Required because the bump commit + tag push to main bypass the
+      # repository ruleset via the admin actor — the default
+      # GITHUB_TOKEN runs as github-actions[bot], which has no bypass
+      # and would be rejected by branch protection.
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.BUMP_TOKEN }}
+          fetch-depth: 0
+
+      - name: Skip if HEAD already tagged
+        id: check
+        run: |
+          if git describe --exact-match HEAD 2>/dev/null; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find merged PR
+        if: steps.check.outputs.skip == 'false'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          PR=$(gh pr list --state merged --base main --limit 5 --json number,mergeCommit \
+            --jq ".[] | select(.mergeCommit.oid == \"$COMMIT_SHA\") | .number")
+          echo "number=$PR" >> $GITHUB_OUTPUT
+
+      - name: Resolve bump type from PR label
+        if: steps.check.outputs.skip == 'false'
+        id: bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          TYPE=none
+          if [ -n "$PR_NUMBER" ]; then
+            LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | join(",")')
+            if   echo "$LABELS" | grep -q "bump:major"; then TYPE=major
+            elif echo "$LABELS" | grep -q "bump:minor"; then TYPE=minor
+            elif echo "$LABELS" | grep -q "bump:patch"; then TYPE=patch
+            fi
+          fi
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+          echo "Bump type: $TYPE (PR #${PR_NUMBER:-none})"
+
+      - name: Compute new version
+        if: steps.check.outputs.skip == 'false' && steps.bump.outputs.type != 'none'
+        id: version
+        env:
+          BUMP_TYPE: ${{ steps.bump.outputs.type }}
+        run: |
+          # Match the [project] table's version field. The regex assumes
+          # the canonical format: `version = "X.Y.Z"` on its own line.
+          CURRENT=$(grep -E '^version = "[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml \
+                    | head -1 | sed -E 's/version = "([^"]+)"/\1/')
+          if [ -z "$CURRENT" ]; then
+            echo "::error::could not parse version from pyproject.toml"
+            exit 1
+          fi
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          case "$BUMP_TYPE" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+          NEW="$MAJOR.$MINOR.$PATCH"
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "new=$NEW" >> $GITHUB_OUTPUT
+          echo "Bumping $CURRENT → $NEW"
+
+      - name: Update pyproject.toml
+        if: steps.check.outputs.skip == 'false' && steps.bump.outputs.type != 'none'
+        env:
+          CURRENT: ${{ steps.version.outputs.current }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+        run: |
+          # Rewrite only the first matching line — narrow enough to not
+          # disturb any future occurrence of the same string elsewhere.
+          sed -i "0,/^version = \"$CURRENT\"$/ s//version = \"$NEW_VERSION\"/" pyproject.toml
+          grep -q "^version = \"$NEW_VERSION\"" pyproject.toml \
+            || { echo "::error::sed rewrite did not apply"; exit 1; }
+
+      - name: Configure git
+        if: steps.check.outputs.skip == 'false' && steps.bump.outputs.type != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit, tag, push
+        if: steps.check.outputs.skip == 'false' && steps.bump.outputs.type != 'none'
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          BUMP_TYPE: ${{ steps.bump.outputs.type }}
+        run: |
+          git add pyproject.toml
+          git commit -m "chore: bump version to $NEW_VERSION ($BUMP_TYPE)"
+          git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
+          git push origin HEAD:main --no-verify
+          git push origin "v$NEW_VERSION" --no-verify

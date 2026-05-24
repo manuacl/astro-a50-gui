@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QLabel, QSlider, QComboBox, QPushButton, QStatusBar, QMessageBox,
 )
 
-from eh_fifty import Device, NoiseGateMode, SliderType
+from vendor.eh_fifty import Device, NoiseGateMode, SliderType
 
 from base_info_dialog import format_base_info
 from eq_widget import EqTemplatesWidget

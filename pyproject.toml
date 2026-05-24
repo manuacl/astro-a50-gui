@@ -1,0 +1,7 @@
+[project]
+name = "astro-a50-gui"
+version = "0.1.0"
+description = "PyQt6 GUI to configure the Astro A50 Gen 4 wireless headset from Linux."
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "vendor/LICENSE.txt"]
