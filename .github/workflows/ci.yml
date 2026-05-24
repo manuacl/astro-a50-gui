@@ -22,6 +22,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install system libs PyQt6 dlopen()s at import time
+        # PyQt6's QtGui transitively needs libEGL.so.1 (OpenGL ES) even
+        # for headless code paths — its shared libs are linked against
+        # it. A clean ubuntu-latest runner doesn't have it.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libegl1
+
       - name: Install lint + runtime deps
         # ruff for the lint step. PyQt6/pyusb/simple-hexdump are needed
         # because tests.py imports modules that load PyQt6 at import
