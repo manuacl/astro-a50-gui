@@ -68,14 +68,14 @@ class EqTemplatesWidget(QGroupBox):
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
-        l = QGridLayout(self)
+        layout = QGridLayout(self)
         self.template_radio_group = QButtonGroup(self)
         self.template_radio_group.setExclusive(True)
         for row, slot in enumerate((1, 2, 3)):
             radio = QRadioButton(t("lbl_eq_slot", n=slot))
             radio.toggled.connect(lambda checked, s=slot: self._on_slot_radio(s, checked))
             self.template_radio_group.addButton(radio, slot)
-            l.addWidget(radio, row, 0)
+            layout.addWidget(radio, row, 0)
             combo_row = QHBoxLayout()
             combo_row.setContentsMargins(0, 0, 0, 0)
             combo = QComboBox()
@@ -100,15 +100,15 @@ class EqTemplatesWidget(QGroupBox):
             trash.setGraphicsEffect(effect)
             trash.setEnabled(False)
             combo_row.addWidget(trash)
-            l.addLayout(combo_row, row, 1)
+            layout.addLayout(combo_row, row, 1)
             self.template_combos[slot] = combo
             self.template_radios[slot] = radio
             self.template_delete_btns[slot] = trash
-        l.setColumnStretch(0, 0)
-        l.setColumnStretch(1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
         self.meter = _EqMeter()
         self.meter.bandModified.connect(self._on_band_modified)
-        l.addWidget(self.meter, len(self.template_combos), 0, 1, 2)
+        layout.addWidget(self.meter, len(self.template_combos), 0, 1, 2)
         btn_row = QHBoxLayout()
         self.btn_reset_eq = QPushButton(t("btn_reset_eq"))
         self.btn_reset_eq.clicked.connect(self._on_reset_templates)
@@ -123,7 +123,7 @@ class EqTemplatesWidget(QGroupBox):
         self.btn_apply_eq.setEnabled(False)
         btn_row.addWidget(self.btn_save_eq)
         btn_row.addWidget(self.btn_apply_eq)
-        l.addLayout(btn_row, len(self.template_combos) + 1, 0, 1, 2)
+        layout.addLayout(btn_row, len(self.template_combos) + 1, 0, 1, 2)
 
     # ---------------------------------------------------------- properties
 
