@@ -80,6 +80,12 @@ during its poll, and the main thread takes it around its own bursts
 
 ## EQ workflow
 
+The headset stores 3 slots, each with a `{name, gain[5], (freq, bw)[5]}`
+record. Names of builtin templates are app-side fiction (in `_EQ_TEMPLATES`)
+but get written verbatim into the slot's `name` field when synced — that's
+how `_match_template` recognises a slot at reload time. User presets live in
+a JSON library on disk; only their *content* gets pushed to a slot.
+
 - **Radio buttons** (EQ 1/2/3) select which slot the bargraph displays. The
   selection becomes the device's *active* preset on the next **Synchroniser**.
 - **Combo box** assigns a template to a slot. Builtins are immutable
@@ -90,13 +96,27 @@ during its poll, and the main thread takes it around its own bursts
 - **Réinitialiser**: discard local edits, reload the template's original
   values. Enabled only when bars are modified.
 - **Sauvegarder**: update the current user preset in place (only enabled when
-  the slot points at a user preset *and* has modified bars).
+  the slot points at a user preset *and* has modified bars). Also writes the
+  new state to the device immediately.
 - **Créer un préréglage**: prompt for a new name and store the current bands
   as a new user template, push to device, save.
-- **Synchroniser le dispositif** (action bar): push everything still
-  pending (scalar settings + radio + combo assignments) and call
-  `save_values()` so it persists across reboots. Turns orange when there is
-  anything to push.
+- **Synchroniser le dispositif** (action bar): pushes the **visible state**
+  of every pending slot (the bargraph values, edits and all) plus scalar
+  settings and the active-slot radio, then calls `save_values()` so it
+  persists across reboots. Turns orange when there is anything to push.
+
+### Sync semantics for modified presets
+
+- **Modified user preset → sync**: the user preset is overwritten locally
+  with the visible bands (so the library entry tracks what you sync), then
+  pushed to the slot under its name. No prompt. The orange "modified"
+  indication clears because the saved definition now matches what's shown.
+- **Modified builtin → sync**: pushed as-is to the slot — `name` on the
+  device stays as the builtin name ("MEDIA", "PRO"…), bands are the edited
+  ones. The builtin library is *never* overwritten. At the next reload,
+  `_match_template` won't match (gain differs), the combo falls back on the
+  builtin name and the off-template bars stay orange. To name and reuse
+  that state, click **Créer un préréglage**.
 
 ## Files
 
@@ -119,6 +139,27 @@ Covers:
 - User-template JSON round-trip and malformed-entry tolerance
 - BCD / datetime helpers used to decode firmware build info
 - `i18n.t()` lookups, fallback to English, kwargs formatting, FR/EN key parity
+- `EqTemplatesWidget.has_pending()` dirty-state logic (radio vs device,
+  pending bands)
+- `EqTemplatesWidget._match_template()` (builtin / user / no-match)
+- `EqTemplatesWidget.push_pending_to_device()` end-to-end: builtin pushed
+  as-is, user preset overwritten locally and pushed, combo change pushes
+  template values, no-pending skips, active-slot-only push, batched disk
+  save for multiple user presets
+- `EqTemplatesWidget.reload_under_lock()` regressions: modified-builtin
+  reload leaves `_slot_pending` empty (root cause of the "Synchronisé"
+  button never flipping to dirty); combo signals are blocked around
+  `setCurrentIndex` during reload; clean reload matches templates with
+  no orange flag
+- `_on_band_modified` / `_on_template_combo_changed` per-event state
+  transitions (off-template marking, back-to-template clearing, drag
+  ignored while loading or with no bands, combo switch pulls template
+  values and pendings all bands, combo back to device template clears
+  pending)
+- `_persist_and_push` save/create flow: user preset added or overwritten,
+  one `_save_user_templates` call, device receives name/gain/5 bands/
+  `save_values`, slot state reset, bandwidths inherited from the previous
+  template (shelf bands 1 and 5 forced to 0)
 
 ## Limitations
 

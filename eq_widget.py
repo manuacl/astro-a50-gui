@@ -11,8 +11,9 @@ shares its `threading.RLock` and `Device` handle with this widget.
 Public surface used by the main window:
 - ``reload_under_lock(active_eq_preset)`` — re-read all slots from the device
   and refresh the UI. Caller must hold ``self._device_lock``.
-- ``push_pending_to_device()`` — push every slot whose combo template differs
-  from the device. Caller must hold ``self._device_lock``.
+- ``push_pending_to_device()`` — push the visible bands of every pending
+  slot to the device (auto-saving user presets, leaving builtins untouched).
+  Caller must hold ``self._device_lock``.
 - ``selected_slot`` property — slot index (1..3) of the currently checked radio.
 - ``has_pending() -> bool`` — True if any slot has unsynced changes.
 - Signal ``dirty_changed(bool)`` — emitted when the global dirty state changes
@@ -167,7 +168,9 @@ class EqTemplatesWidget(QGroupBox):
                 idx = combo.findData(target) if target else 0
                 if idx < 0:
                     idx = 0
+                was_blocked = combo.blockSignals(True)
                 combo.setCurrentIndex(idx)
+                combo.blockSignals(was_blocked)
                 modified: set[int] = set()
                 tpl_name = combo.itemData(idx)
                 if data is not None and tpl_name in all_tpls:
@@ -188,24 +191,53 @@ class EqTemplatesWidget(QGroupBox):
         self._emit_dirty_if_changed()
 
     def push_pending_to_device(self) -> None:
-        """Push every slot whose combo template differs from the device, plus
+        """Push the visible state of every pending slot to the device, plus
         the active-EQ-slot selection if the user picked another radio.
+
+        For slots whose currently selected combo is a user preset, the user
+        preset is overwritten locally with the visible bands — what you sync
+        becomes the new definition of that user preset. Modified builtins
+        are pushed as-is (the slot's name on the device stays as the builtin
+        name, the bands are the edited ones); the builtin itself is never
+        overwritten.
+
         Caller must hold ``self._device_lock``."""
         all_tpls = self._all_templates()
+        user_templates_changed = False
         for slot, combo in self.template_combos.items():
-            desired = combo.currentData()
-            if desired is None or desired == self._device_templates.get(slot):
+            if not self._slot_pending[slot]:
                 continue
-            tpl = all_tpls[desired]
-            self.device.set_eq_preset_name(slot, desired)
-            self.device.set_eq_preset_gain(slot, tpl["gain"])
-            for band, (freq, bw) in tpl["bands"].items():
-                self.device.set_eq_preset_freq_and_bw(slot, band, freq, bw)
-            self._device_templates[slot] = desired
+            bands = self._slot_bands[slot]
+            if not bands:
+                continue
+            name = combo.currentData() or ""
+            prev_tpl = all_tpls.get(name, _EQ_TEMPLATES["MEDIA"])
+            gain = [g for (_freq, g) in bands]
+            device_bands = {
+                b: (bands[b - 1][0], 0 if b in (1, 5) else prev_tpl["bands"][b][1])
+                for b in range(1, 6)
+            }
+            if name in self._user_templates:
+                self._user_templates[name] = {
+                    "gain": list(gain),
+                    "bands": dict(device_bands),
+                }
+                user_templates_changed = True
+                self._slot_modified[slot].clear()
+            self.device.set_eq_preset_name(slot, name)
+            self.device.set_eq_preset_gain(slot, gain)
+            for b, (freq, bw) in device_bands.items():
+                self.device.set_eq_preset_freq_and_bw(slot, b, freq, bw)
+            data = {"name": name, "gain": gain, "bands": device_bands}
+            self._device_templates[slot] = self._match_template(data)
             self._slot_pending[slot].clear()
+        if user_templates_changed:
+            _save_user_templates(self._user_templates)
         if self._selected_slot != self._device_active_eq:
             self.device.set_active_eq_preset(self._selected_slot)
             self._device_active_eq = self._selected_slot
+        self._refresh_meter()
+        self._update_apply_enabled()
         self._emit_dirty_if_changed()
 
     # ------------------------------------------------------ handlers
