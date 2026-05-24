@@ -39,7 +39,7 @@ with Device() as d:
     for arg in ARGS_TO_TRY:
         try:
             resp = raw_request(d, 0x83, bytes([arg]))
-        except Exception as e:
+        except Exception:
             print(f"  {arg:02x}  TIMEOUT — aborting (firmware may be stuck if we continue)")
             sys.exit(1)
         status = resp[1]

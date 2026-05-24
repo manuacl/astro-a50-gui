@@ -122,19 +122,19 @@ class A50Window(QMainWindow):
 
     def _build_status_group(self):
         box = QGroupBox(t("grp_status"))
-        l = QHBoxLayout(box)
+        layout = QHBoxLayout(box)
         self.lbl_power = QLabel("—")
         self.lbl_dock = QLabel("—")
         self.lbl_battery = QLabel("—")
         for w in (self.lbl_power, self.lbl_dock, self.lbl_battery):
-            l.addWidget(w)
-        l.addStretch(1)
+            layout.addWidget(w)
+        layout.addStretch(1)
         return box
 
     def _build_audio_group(self):
         box = QGroupBox(t("grp_audio"))
-        l = QGridLayout(box)
-        l.addWidget(QLabel(t("lbl_balance")), 0, 0)
+        layout = QGridLayout(box)
+        layout.addWidget(QLabel(t("lbl_balance")), 0, 0)
         bal_row = QHBoxLayout()
         self.sld_balance = QSlider(Qt.Orientation.Horizontal)
         self.sld_balance.setRange(0, 255)
@@ -147,7 +147,7 @@ class A50Window(QMainWindow):
         bal_row.addWidget(self.sld_balance, 1)
         bal_row.addWidget(self._icon_label("audio-input-microphone", t("lbl_voice")))
         bal_row.addWidget(self.lbl_balance)
-        l.addLayout(bal_row, 0, 1)
+        layout.addLayout(bal_row, 0, 1)
         return box
 
     @staticmethod
@@ -168,8 +168,8 @@ class A50Window(QMainWindow):
         # while toggling presets 0/1/2) found no audible difference. Feature
         # appears orphaned in the firmware.
         box = QGroupBox(t("grp_mic"))
-        l = QGridLayout(box)
-        l.addWidget(QLabel(t("lbl_noise_gate")), 0, 0)
+        layout = QGridLayout(box)
+        layout.addWidget(QLabel(t("lbl_noise_gate")), 0, 0)
         self.cmb_gate = QComboBox()
         gate_icons = {
             NoiseGateMode.STREAMING: ("camera-video", "media-record"),
@@ -185,15 +185,15 @@ class A50Window(QMainWindow):
                     break
             self.cmb_gate.addItem(icon, m.name, m)
         self.cmb_gate.currentIndexChanged.connect(self._on_gate_changed)
-        l.addWidget(self.cmb_gate, 0, 1)
+        layout.addWidget(self.cmb_gate, 0, 1)
         return box
 
     def _build_sliders_group(self):
         box = QGroupBox(t("grp_levels"))
-        l = QGridLayout(box)
+        layout = QGridLayout(box)
         self.slider_widgets = {}
         for row, (st, label) in enumerate(_slider_types()):
-            l.addWidget(QLabel(label), row, 0)
+            layout.addWidget(QLabel(label), row, 0)
             sld = QSlider(Qt.Orientation.Horizontal)
             sld.setRange(0, 100)
             sld.setSingleStep(1)
@@ -201,22 +201,22 @@ class A50Window(QMainWindow):
             lbl = QLabel("—")
             lbl.setMinimumWidth(48)
             sld.valueChanged.connect(lambda v, s=st, lab=lbl: self._on_slider_changed(s, v, lab))
-            l.addWidget(sld, row, 1)
-            l.addWidget(lbl, row, 2)
+            layout.addWidget(sld, row, 1)
+            layout.addWidget(lbl, row, 2)
             self.slider_widgets[st] = (sld, lbl)
         return box
 
     def _build_alert_group(self):
         box = QGroupBox(t("grp_notifications"))
-        l = QGridLayout(box)
-        l.addWidget(QLabel(t("lbl_alert_volume")), 0, 0)
+        layout = QGridLayout(box)
+        layout.addWidget(QLabel(t("lbl_alert_volume")), 0, 0)
         self.sld_alert = QSlider(Qt.Orientation.Horizontal)
         self.sld_alert.setRange(0, 100)
         self.lbl_alert = QLabel("—")
         self.lbl_alert.setMinimumWidth(48)
         self.sld_alert.valueChanged.connect(self._on_alert_changed)
-        l.addWidget(self.sld_alert, 0, 1)
-        l.addWidget(self.lbl_alert, 0, 2)
+        layout.addWidget(self.sld_alert, 0, 1)
+        layout.addWidget(self.lbl_alert, 0, 2)
         return box
 
     def _build_menu_bar(self):
