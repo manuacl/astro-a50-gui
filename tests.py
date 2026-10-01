@@ -2188,5 +2188,21 @@ class SweepRegressionTest(unittest.TestCase):
         save.assert_called_once()
 
 
+class BalanceAndHelpTest(unittest.TestCase):
+    def test_balance_shown_as_voice_and_game_percentages(self):
+        # eh-fifty: 0 is all game, 255 all voice.
+        self.assertEqual(gui.balance_text(0), "Voice 0% · Game 100%")
+        self.assertEqual(gui.balance_text(255), "Voice 100% · Game 0%")
+        self.assertEqual(gui.balance_text(128), "Voice 50% · Game 50%")
+        with mock.patch.object(i18n, "LANG", "es"):
+            self.assertEqual(gui.balance_text(64), "Voz 25 % · Juego 75 %")
+
+    def test_every_level_slider_has_help(self):
+        for st, _label in gui._slider_types():
+            with self.subTest(slider=st.name):
+                key = gui._SLIDER_TIPS[st]
+                self.assertNotEqual(i18n.t(key), key)
+
+
 if __name__ == "__main__":
     unittest.main()

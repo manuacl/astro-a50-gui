@@ -95,6 +95,23 @@ def _slider_types():
     ]
 
 
+# Help shown when hovering each level slider.
+_SLIDER_TIPS = {
+    SliderType.MIC: "tip_mic_level",
+    SliderType.SIDE_TONE: "tip_sidetone",
+    SliderType.STREAM_PORT_MIX_MIC: "tip_stream_mic",
+    SliderType.STREAM_PORT_MIX_CHAT: "tip_stream_chat",
+    SliderType.STREAM_PORT_MIX_GAME: "tip_stream_game",
+    SliderType.STREAM_PORT_MIX_AUX: "tip_stream_aux",
+}
+
+
+def balance_text(value: int) -> str:
+    """'Voice 40% · Game 60%' for an eh-fifty balance (0 = all game, 255 = all voice)."""
+    voice = round(value * 100 / 255)
+    return t("balance_value", voice=voice, game=100 - voice)
+
+
 def safe(call, default=None):
     try:
         return call()
@@ -188,18 +205,27 @@ class A50Window(QMainWindow):
     def _build_audio_group(self):
         box = QGroupBox(t("grp_audio"))
         layout = QGridLayout(box)
-        layout.addWidget(QLabel(t("lbl_balance")), 0, 0)
+        lbl = QLabel(t("lbl_balance"))
+        lbl.setToolTip(t("tip_balance"))
+        layout.addWidget(lbl, 0, 0)
         bal_row = QHBoxLayout()
         self.sld_balance = QSlider(Qt.Orientation.Horizontal)
         self.sld_balance.setRange(0, 255)
         self.sld_balance.setSingleStep(1)
         self.sld_balance.setPageStep(16)
+        # Voice on the left and game on the right, like the headset's buttons
+        # and Command Center. Values keep eh-fifty's meaning (0 = all game).
+        self.sld_balance.setInvertedAppearance(True)
+        self.sld_balance.setInvertedControls(True)
+        self.sld_balance.setToolTip(t("tip_balance"))
         self.sld_balance.valueChanged.connect(self._on_balance_changed)
         self.lbl_balance = QLabel("—")
-        self.lbl_balance.setMinimumWidth(64)
-        bal_row.addWidget(self._icon_label("input-gamepad", t("lbl_game")))
-        bal_row.addWidget(self.sld_balance, 1)
+        metrics = self.lbl_balance.fontMetrics()
+        self.lbl_balance.setMinimumWidth(
+            max(metrics.horizontalAdvance(balance_text(v)) for v in (0, 128, 255)))
         bal_row.addWidget(self._icon_label("audio-input-microphone", t("lbl_voice")))
+        bal_row.addWidget(self.sld_balance, 1)
+        bal_row.addWidget(self._icon_label("input-gamepad", t("lbl_game")))
         bal_row.addWidget(self.lbl_balance)
         layout.addLayout(bal_row, 0, 1)
         return box
@@ -223,13 +249,18 @@ class A50Window(QMainWindow):
         # appears orphaned in the firmware.
         box = QGroupBox(t("grp_mic"))
         layout = QGridLayout(box)
-        layout.addWidget(QLabel(t("lbl_noise_gate")), 0, 0)
+        lbl = QLabel(t("lbl_noise_gate"))
+        lbl.setToolTip(t("tip_noise_gate"))
+        layout.addWidget(lbl, 0, 0)
         self.cmb_gate = QComboBox()
+        self.cmb_gate.setToolTip(t("tip_noise_gate"))
+        # Outline icons, like the balance's gamepad and microphone, picturing
+        # what Command Center shows: antenna, moon, house and trophy.
         gate_icons = {
-            NoiseGateMode.STREAMING: ("camera-video", "media-record"),
-            NoiseGateMode.NIGHT: ("weather-clear-night", "view-night"),
+            NoiseGateMode.STREAMING: ("network-wireless-hotspot", "camera-video"),
+            NoiseGateMode.NIGHT: ("weather-clear-night-symbolic", "weather-clear-night"),
             NoiseGateMode.HOME: ("go-home", "user-home"),
-            NoiseGateMode.TOURNAMENT: ("applications-games", "games-config-options"),
+            NoiseGateMode.TOURNAMENT: ("games-highscores", "applications-games"),
         }
         for m in NoiseGateMode:
             icon = QIcon()
@@ -247,8 +278,11 @@ class A50Window(QMainWindow):
         layout = QGridLayout(box)
         self.slider_widgets = {}
         for row, (st, label) in enumerate(_slider_types()):
-            layout.addWidget(QLabel(label), row, 0)
+            name = QLabel(label)
+            name.setToolTip(t(_SLIDER_TIPS[st]))
+            layout.addWidget(name, row, 0)
             sld = QSlider(Qt.Orientation.Horizontal)
+            sld.setToolTip(t(_SLIDER_TIPS[st]))
             sld.setRange(0, 100)
             sld.setSingleStep(1)
             sld.setPageStep(5)
@@ -263,9 +297,12 @@ class A50Window(QMainWindow):
     def _build_alert_group(self):
         box = QGroupBox(t("grp_notifications"))
         layout = QGridLayout(box)
-        layout.addWidget(QLabel(t("lbl_alert_volume")), 0, 0)
+        lbl = QLabel(t("lbl_alert_volume"))
+        lbl.setToolTip(t("tip_alert_volume"))
+        layout.addWidget(lbl, 0, 0)
         self.sld_alert = QSlider(Qt.Orientation.Horizontal)
         self.sld_alert.setRange(0, 100)
+        self.sld_alert.setToolTip(t("tip_alert_volume"))
         self.lbl_alert = QLabel("—")
         self.lbl_alert.setMinimumWidth(48)
         self.sld_alert.valueChanged.connect(self._on_alert_changed)
@@ -535,7 +572,7 @@ class A50Window(QMainWindow):
             self._loaded_balance = balance
             if balance is not None:
                 self.sld_balance.setValue(balance)
-                self.lbl_balance.setText(f"{balance}/255")
+                self.lbl_balance.setText(balance_text(balance))
             else:
                 self.lbl_balance.setText(t("na"))
 
@@ -616,7 +653,7 @@ class A50Window(QMainWindow):
             self.lbl_battery.setText("🔋 —")
 
     def _on_balance_changed(self, value: int):
-        self.lbl_balance.setText(f"{value}/255")
+        self.lbl_balance.setText(balance_text(value))
         if self._loading:
             return
         self._settings_changed()
