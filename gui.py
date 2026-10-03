@@ -106,10 +106,23 @@ _SLIDER_TIPS = {
 }
 
 
-def balance_text(value: int) -> str:
-    """'Voice 40% · Game 60%' for an eh-fifty balance (0 = all game, 255 = all voice)."""
-    voice = round(value * 100 / 255)
-    return t("balance_value", voice=voice, game=100 - voice)
+def game_percent(balance: int) -> int:
+    """eh-fifty's balance (0 = all game, 255 = all voice) as the game percentage."""
+    return round((255 - balance) * 100 / 255)
+
+
+def balance_from_game_percent(game: int) -> int:
+    """The eh-fifty balance for a game percentage."""
+    return 255 - round(game * 255 / 100)
+
+
+def balance_to_write(loaded: int | None, game: int) -> int | None:
+    """The default balance a Sync must write, or None while the slider shows
+    what the base holds. Compared in percent, so a balance set with the headset
+    buttons (113, say) isn't rewritten as 112 on every Sync."""
+    if loaded is not None and game_percent(loaded) == game:
+        return None
+    return balance_from_game_percent(game)
 
 
 def safe(call, default=None):
@@ -203,32 +216,35 @@ class A50Window(QMainWindow):
         return box
 
     def _build_audio_group(self):
-        box = QGroupBox(t("grp_audio"))
-        layout = QGridLayout(box)
-        lbl = QLabel(t("lbl_balance"))
-        lbl.setToolTip(t("tip_balance"))
-        layout.addWidget(lbl, 0, 0)
-        bal_row = QHBoxLayout()
+        box = QGroupBox(t("grp_balance"))
+        layout = QHBoxLayout(box)
+        # The slider is the game percentage: voice on the left, game on the
+        # right, like the headset's buttons. eh-fifty's 0-255 (0 = all game)
+        # is only converted when reading from and writing to the device.
         self.sld_balance = QSlider(Qt.Orientation.Horizontal)
-        self.sld_balance.setRange(0, 255)
+        self.sld_balance.setRange(0, 100)
         self.sld_balance.setSingleStep(1)
-        self.sld_balance.setPageStep(16)
-        # Voice on the left and game on the right, like the headset's buttons
-        # and Command Center. Values keep eh-fifty's meaning (0 = all game).
-        self.sld_balance.setInvertedAppearance(True)
-        self.sld_balance.setInvertedControls(True)
+        self.sld_balance.setPageStep(5)
         self.sld_balance.setToolTip(t("tip_balance"))
         self.sld_balance.valueChanged.connect(self._on_balance_changed)
-        self.lbl_balance = QLabel("—")
-        metrics = self.lbl_balance.fontMetrics()
-        self.lbl_balance.setMinimumWidth(
-            max(metrics.horizontalAdvance(balance_text(v)) for v in (0, 128, 255)))
-        bal_row.addWidget(self._icon_label("audio-input-microphone", t("lbl_voice")))
-        bal_row.addWidget(self.sld_balance, 1)
-        bal_row.addWidget(self._icon_label("input-gamepad", t("lbl_game")))
-        bal_row.addWidget(self.lbl_balance)
-        layout.addLayout(bal_row, 0, 1)
+        self.lbl_voice_pct = QLabel("—")
+        self.lbl_game_pct = QLabel("—")
+        width = self.lbl_voice_pct.fontMetrics().horizontalAdvance("100%")
+        for lbl in (self.lbl_voice_pct, self.lbl_game_pct):
+            lbl.setMinimumWidth(width)
+        self.lbl_voice_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self._icon_label("audio-input-microphone", t("lbl_voice")))
+        layout.addWidget(self.lbl_voice_pct)
+        layout.addWidget(self.sld_balance, 1)
+        layout.addWidget(self.lbl_game_pct)
+        layout.addWidget(self._icon_label("input-gamepad", t("lbl_game")))
         return box
+
+    def _show_balance(self, game: int | None) -> None:
+        voice_text = t("na") if game is None else f"{100 - game}%"
+        game_text = t("na") if game is None else f"{game}%"
+        self.lbl_voice_pct.setText(voice_text)
+        self.lbl_game_pct.setText(game_text)
 
     @staticmethod
     def _icon_label(icon_name: str, tooltip: str, size: int = 20) -> QLabel:
@@ -571,10 +587,10 @@ class A50Window(QMainWindow):
             self.sld_balance.setEnabled(balance is not None)
             self._loaded_balance = balance
             if balance is not None:
-                self.sld_balance.setValue(balance)
-                self.lbl_balance.setText(balance_text(balance))
+                self.sld_balance.setValue(game_percent(balance))
+                self._show_balance(game_percent(balance))
             else:
-                self.lbl_balance.setText(t("na"))
+                self._show_balance(None)
 
             gate_idx = self.cmb_gate.findData(gate) if gate is not None else -1
             self.cmb_gate.setEnabled(gate_idx >= 0)
@@ -653,7 +669,7 @@ class A50Window(QMainWindow):
             self.lbl_battery.setText("🔋 —")
 
     def _on_balance_changed(self, value: int):
-        self.lbl_balance.setText(balance_text(value))
+        self._show_balance(value)
         if self._loading:
             return
         self._settings_changed()
@@ -690,8 +706,10 @@ class A50Window(QMainWindow):
                 # headset buttons change; write the default balance only when
                 # the user moved the slider, so Sync never persists a button
                 # adjustment as the power-on default.
-                balance = self.sld_balance.value()
-                if self.sld_balance.isEnabled() and balance != self._loaded_balance:
+                balance = None
+                if self.sld_balance.isEnabled():
+                    balance = balance_to_write(self._loaded_balance, self.sld_balance.value())
+                if balance is not None:
                     self.device.set_default_balance(balance)
                     self._loaded_balance = balance
                 gate_mode = self.cmb_gate.currentData()

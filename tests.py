@@ -1827,14 +1827,15 @@ class SweepRegressionTest(unittest.TestCase):
         window.cmb_gate.findData.return_value = 0
         gui.A50Window.reload_all(window)
         window.sld_balance.isEnabled.return_value = True
-        window.sld_balance.value.return_value = 120
+        # The slider is the game percentage: untouched, it shows the base's 120.
+        window.sld_balance.value.return_value = gui.game_percent(120)
         with mock.patch.object(gui, "QApplication"):
             gui.A50Window._on_save(window)
         window.device.set_default_balance.assert_not_called()
-        window.sld_balance.value.return_value = 200
+        window.sld_balance.value.return_value = 20
         with mock.patch.object(gui, "QApplication"):
             gui.A50Window._on_save(window)
-        window.device.set_default_balance.assert_called_once_with(200)
+        window.device.set_default_balance.assert_called_once_with(gui.balance_from_game_percent(20))
 
     @staticmethod
     def _settings_window():
@@ -2189,13 +2190,21 @@ class SweepRegressionTest(unittest.TestCase):
 
 
 class BalanceAndHelpTest(unittest.TestCase):
-    def test_balance_shown_as_voice_and_game_percentages(self):
+    def test_balance_slider_is_the_game_percentage(self):
         # eh-fifty: 0 is all game, 255 all voice.
-        self.assertEqual(gui.balance_text(0), "Voice 0% · Game 100%")
-        self.assertEqual(gui.balance_text(255), "Voice 100% · Game 0%")
-        self.assertEqual(gui.balance_text(128), "Voice 50% · Game 50%")
-        with mock.patch.object(i18n, "LANG", "es"):
-            self.assertEqual(gui.balance_text(64), "Voz 25 % · Juego 75 %")
+        self.assertEqual(gui.game_percent(0), 100)
+        self.assertEqual(gui.game_percent(255), 0)
+        self.assertEqual(gui.game_percent(128), 50)
+        for game in range(101):
+            with self.subTest(game=game):
+                self.assertEqual(gui.game_percent(gui.balance_from_game_percent(game)), game)
+
+    def test_sync_leaves_a_balance_set_by_the_headset_alone(self):
+        # 113 (set with the headset buttons) reads as 56% game; with the
+        # slider untouched, Sync writes nothing, not a rounded 112.
+        self.assertIsNone(gui.balance_to_write(113, gui.game_percent(113)))
+        self.assertEqual(gui.balance_to_write(113, 60), gui.balance_from_game_percent(60))
+        self.assertEqual(gui.balance_to_write(None, 50), gui.balance_from_game_percent(50))
 
     def test_every_level_slider_has_help(self):
         for st, _label in gui._slider_types():
