@@ -22,7 +22,6 @@ from PyQt6.QtGui import (
     QAction,
     QActionGroup,
     QIcon,
-    QPalette,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -230,16 +229,12 @@ class A50Window(QMainWindow):
         return box
 
     def _show_balance_icons(self, size: int = 20) -> None:
-        """Both ends of the balance, drawn for the current palette and screen
-        scale, and redrawn when either changes (see event)."""
+        """Both ends of the balance: a head speaking and a gamepad. QLabel
+        holds a pixmap, so they are drawn again for each palette and screen
+        scale (see event)."""
         ratio = self.devicePixelRatioF()
-        color = self.palette().color(QPalette.ColorRole.WindowText)
-        # A head speaking (Lucide "speech", icons/), else the theme's microphone.
-        voice = themes.svg_pixmap("voice", color, size, ratio)
-        if voice.isNull():
-            voice = themes.icon("audio-input-microphone").pixmap(QSize(size, size), ratio)
-        game = themes.icon("input-gamepad").pixmap(QSize(size, size), ratio)
-        for lbl, pixmap in ((self.lbl_voice_icon, voice), (self.lbl_game_icon, game)):
+        for lbl, name in ((self.lbl_voice_icon, "speech"), (self.lbl_game_icon, "gamepad-2")):
+            pixmap = themes.lucide(name).pixmap(QSize(size, size), ratio)
             if pixmap.isNull():
                 lbl.setText(lbl.toolTip())
             else:
@@ -267,13 +262,13 @@ class A50Window(QMainWindow):
         # Outline icons picturing what Command Center shows: antenna, moon,
         # house and trophy.
         gate_icons = {
-            NoiseGateMode.STREAMING: ("network-wireless-hotspot", "camera-video"),
-            NoiseGateMode.NIGHT: ("weather-clear-night-symbolic", "weather-clear-night"),
-            NoiseGateMode.HOME: ("go-home", "user-home"),
-            NoiseGateMode.TOURNAMENT: ("games-highscores", "applications-games"),
+            NoiseGateMode.STREAMING: "radio-tower",
+            NoiseGateMode.NIGHT: "moon",
+            NoiseGateMode.HOME: "house",
+            NoiseGateMode.TOURNAMENT: "trophy",
         }
         for m in NoiseGateMode:
-            icon = themes.icon(*gate_icons[m]) if m in gate_icons else QIcon()
+            icon = themes.lucide(gate_icons[m]) if m in gate_icons else QIcon()
             self.cmb_gate.addItem(icon, gate_label(m.name), m)
         self.cmb_gate.currentIndexChanged.connect(self._on_gate_changed)
         layout.addWidget(self.cmb_gate, 0, 1)
