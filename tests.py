@@ -1823,12 +1823,12 @@ class SweepRegressionTest(unittest.TestCase):
         window.device.set_alert_volume.assert_not_called()
 
     def test_sync_writes_the_default_balance_only_when_the_slider_moved(self):
-        window = self._window(get_balance=120)
-        window.cmb_gate.findData.return_value = 0
-        gui.A50Window.reload_all(window)
+        window = self._window()
         window.sld_balance.isEnabled.return_value = True
-        # The slider is the game percentage: untouched, it shows the base's 120.
-        window.sld_balance.value.return_value = gui.game_percent(120)
+        # 113 (set with the headset buttons) reads as 56% game; with the
+        # slider untouched, Sync writes nothing, not a rounded 112.
+        window._synced = {"balance": gui.game_percent(113)}
+        window.sld_balance.value.return_value = gui.game_percent(113)
         with mock.patch.object(gui, "QApplication"):
             gui.A50Window._on_save(window)
         window.device.set_default_balance.assert_not_called()
@@ -1854,7 +1854,7 @@ class SweepRegressionTest(unittest.TestCase):
 
         window = mock.MagicMock()
         window._loading = False
-        window.sld_balance, window.cmb_gate, window.sld_alert = Control(128), Control(1), Control(50)
+        window.sld_balance, window.cmb_gate, window.sld_alert = Control(50), Control(1), Control(50)
         window.slider_widgets = {"MIC": (Control(40), mock.MagicMock())}
         window._SYNC_STYLE_DIRTY = gui.A50Window._SYNC_STYLE_DIRTY
         window._SYNC_STYLE_SYNCED = gui.A50Window._SYNC_STYLE_SYNCED
@@ -1891,10 +1891,10 @@ class SweepRegressionTest(unittest.TestCase):
         window.slider_widgets["MIC"][0].v = 40
         gui.A50Window._settings_changed(window)
         self._assert_sync(window, orange=False)
-        window.sld_balance.v = 130
+        window.sld_balance.v = 51
         gui.A50Window._settings_changed(window)
         self._assert_sync(window, orange=True)
-        window.sld_balance.v = 128
+        window.sld_balance.v = 50
         gui.A50Window._settings_changed(window)
         self._assert_sync(window, orange=False)
 
@@ -2199,18 +2199,10 @@ class BalanceAndHelpTest(unittest.TestCase):
             with self.subTest(game=game):
                 self.assertEqual(gui.game_percent(gui.balance_from_game_percent(game)), game)
 
-    def test_sync_leaves_a_balance_set_by_the_headset_alone(self):
-        # 113 (set with the headset buttons) reads as 56% game; with the
-        # slider untouched, Sync writes nothing, not a rounded 112.
-        self.assertIsNone(gui.balance_to_write(113, gui.game_percent(113)))
-        self.assertEqual(gui.balance_to_write(113, 60), gui.balance_from_game_percent(60))
-        self.assertEqual(gui.balance_to_write(None, 50), gui.balance_from_game_percent(50))
-
     def test_every_level_slider_has_help(self):
-        for st, _label in gui._slider_types():
+        for st, _label, tip in gui._slider_types():
             with self.subTest(slider=st.name):
-                key = gui._SLIDER_TIPS[st]
-                self.assertNotEqual(i18n.t(key), key)
+                self.assertFalse(tip.startswith("tip_"))
 
 
 if __name__ == "__main__":
