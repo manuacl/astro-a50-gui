@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 )
 
 import astroeq
+import themes
 from device_handle import DeviceHandle
 from eq_meter import _EqMeter
 from i18n import t
@@ -119,7 +120,7 @@ class EqTemplatesWidget(QGroupBox):
             )
             combo_row.addWidget(combo, 1)
             trash = QPushButton()
-            icon = QIcon.fromTheme("edit-delete") or QIcon.fromTheme("user-trash")
+            icon = themes.icon("edit-delete", "user-trash")
             if not icon.isNull():
                 trash.setIcon(icon)
             else:
@@ -585,9 +586,7 @@ class EqTemplatesWidget(QGroupBox):
         data = self._slot_device.get(slot)
         if data is not None and (keep or self._device_target(slot) == self.ON_DEVICE):
             label = t("device_preset", name=data["name"] or t("preset_n", n=slot))
-            icon = QIcon.fromTheme("audio-headset")
-            if icon.isNull():
-                icon = QIcon.fromTheme("audio-headphones")
+            icon = themes.icon("audio-headset", "audio-headphones")
             combo.insertItem(0, icon, label, self.ON_DEVICE)
 
     # ------------------------------------------------------ device reads
@@ -613,14 +612,8 @@ class EqTemplatesWidget(QGroupBox):
     @staticmethod
     def _template_icon(name: str) -> QIcon:
         if name in _EQ_TEMPLATES:
-            icon = QIcon.fromTheme("audio-headset")
-            if icon.isNull():
-                icon = QIcon.fromTheme("audio-headphones")
-        else:
-            icon = QIcon.fromTheme("emblem-favorite")
-            if icon.isNull():
-                icon = QIcon.fromTheme("starred")
-        return icon
+            return themes.icon("audio-headset", "audio-headphones")
+        return themes.icon("emblem-favorite", "starred")
 
     def _match_template(self, data: dict) -> str | None:
         for name, tpl in self._all_templates().items():

@@ -1823,19 +1823,41 @@ class SweepRegressionTest(unittest.TestCase):
         window.device.set_alert_volume.assert_not_called()
 
     def test_sync_writes_the_default_balance_only_when_the_slider_moved(self):
-        window = self._window()
-        window.sld_balance.isEnabled.return_value = True
-        # 113 (set with the headset buttons) reads as 56% game; with the
-        # slider untouched, Sync writes nothing, not a rounded 112.
-        window._synced = {"balance": gui.game_percent(113)}
-        window.sld_balance.value.return_value = gui.game_percent(113)
-        with mock.patch.object(gui, "QApplication"):
-            gui.A50Window._on_save(window)
+        class Slider:
+            v, enabled = 0, False
+
+            def setValue(self, v):
+                self.v = v
+
+            def value(self):
+                return self.v
+
+            def setEnabled(self, enabled):
+                self.enabled = enabled
+
+            def isEnabled(self):
+                return self.enabled
+
+        window = self._window(get_balance=113)
+        window.sld_balance = Slider()
+        window.cmb_gate.findData.return_value = 0
+        window._controls = gui.A50Window._controls.__get__(window)
+
+        def sync():
+            with mock.patch.object(gui, "QApplication"):
+                gui.A50Window._on_save(window)
+
+        gui.A50Window.reload_all(window)
+        # 113 (set with the headset buttons) is recorded as 56% game...
+        self.assertEqual(window._synced["balance"], gui.game_percent(113))
+        # ...so Sync with the slider untouched writes nothing, not a rounded 112.
+        sync()
         window.device.set_default_balance.assert_not_called()
-        window.sld_balance.value.return_value = 20
-        with mock.patch.object(gui, "QApplication"):
-            gui.A50Window._on_save(window)
+        window.sld_balance.setValue(20)
+        sync()
         window.device.set_default_balance.assert_called_once_with(gui.balance_from_game_percent(20))
+        sync()  # synced at 20 now: nothing new to write
+        window.device.set_default_balance.assert_called_once()
 
     @staticmethod
     def _settings_window():
@@ -2216,6 +2238,22 @@ class BalanceAndHelpTest(unittest.TestCase):
         for st, _label, tip in gui._slider_types():
             with self.subTest(slider=st.name):
                 self.assertFalse(tip.startswith("tip_"))
+
+    def test_every_language_has_every_string(self):
+        # t() falls back to English, so a missing string would go unnoticed.
+        english = set(i18n.TRANSLATIONS["en"])
+        for lang, strings in i18n.TRANSLATIONS.items():
+            with self.subTest(lang=lang):
+                self.assertEqual(set(strings), english)
+
+    def test_theme_icon_takes_the_first_name_the_theme_has(self):
+        with mock.patch.object(themes.QIcon, "hasThemeIcon", side_effect=lambda n: n == "b"), \
+                mock.patch.object(themes.QIcon, "fromTheme") as from_theme:
+            themes.icon("a", "b")
+            from_theme.assert_called_with("b")
+            # None found: Qt's own fallback for the first name.
+            themes.icon("x", "y")
+            from_theme.assert_called_with("x")
 
 
 if __name__ == "__main__":

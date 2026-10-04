@@ -173,9 +173,7 @@ class A50Window(QMainWindow):
         self._device_lock = threading.RLock()
 
         self.setWindowTitle(t("window_title"))
-        window_icon = QIcon.fromTheme("audio-headset")
-        if window_icon.isNull():
-            window_icon = QIcon.fromTheme("audio-headphones")
+        window_icon = themes.icon("audio-headset", "audio-headphones")
         if not window_icon.isNull():
             self.setWindowIcon(window_icon)
         self.setMinimumWidth(480)
@@ -257,7 +255,7 @@ class A50Window(QMainWindow):
         color = self.palette().color(QPalette.ColorRole.WindowText)
         pixmap = svg_pixmap("voice", color, size, self.devicePixelRatioF())
         if pixmap.isNull():
-            pixmap = QIcon.fromTheme("audio-input-microphone").pixmap(size, size)
+            pixmap = themes.icon("audio-input-microphone").pixmap(size, size)
         if pixmap.isNull():
             self.lbl_voice_icon.setText(t("lbl_voice"))
         else:
@@ -272,7 +270,7 @@ class A50Window(QMainWindow):
     @staticmethod
     def _icon_label(icon_name: str, tooltip: str, size: int = 20) -> QLabel:
         lbl = QLabel()
-        icon = QIcon.fromTheme(icon_name)
+        icon = themes.icon(icon_name)
         if not icon.isNull():
             lbl.setPixmap(icon.pixmap(size, size))
         else:
@@ -294,9 +292,7 @@ class A50Window(QMainWindow):
         self.cmb_gate = QComboBox()
         self.cmb_gate.setToolTip(t("tip_noise_gate"))
         # Outline icons picturing what Command Center shows: antenna, moon,
-        # house and trophy. hasThemeIcon, not fromTheme().isNull(): fromTheme
-        # falls back to a shorter name (network-wireless for
-        # network-wireless-hotspot), so the second choice would never be tried.
+        # house and trophy.
         gate_icons = {
             NoiseGateMode.STREAMING: ("network-wireless-hotspot", "camera-video"),
             NoiseGateMode.NIGHT: ("weather-clear-night-symbolic", "weather-clear-night"),
@@ -304,9 +300,7 @@ class A50Window(QMainWindow):
             NoiseGateMode.TOURNAMENT: ("games-highscores", "applications-games"),
         }
         for m in NoiseGateMode:
-            choices = gate_icons.get(m, ())
-            found = [n for n in choices if QIcon.hasThemeIcon(n)] or choices
-            icon = QIcon.fromTheme(found[0]) if found else QIcon()
+            icon = themes.icon(*gate_icons[m]) if m in gate_icons else QIcon()
             self.cmb_gate.addItem(icon, gate_label(m.name), m)
         self.cmb_gate.currentIndexChanged.connect(self._on_gate_changed)
         layout.addWidget(self.cmb_gate, 0, 1)
@@ -608,8 +602,9 @@ class A50Window(QMainWindow):
             # A control whose read failed is disabled, like the sliders below,
             # so Sync never writes a default that was never loaded.
             self.sld_balance.setEnabled(balance is not None)
-            game = None if balance is None else game_percent(balance)
-            if game is not None:
+            game = None
+            if balance is not None:
+                game = game_percent(balance)
                 self.sld_balance.setValue(game)
             # Explicit: setValue doesn't signal when the value is unchanged.
             self._show_balance(game)
@@ -812,9 +807,7 @@ def main():
     # the headset icon survives across windows / taskbar / Alt-Tab.
     app.setApplicationName(PROCESS_NAME)
     app.setDesktopFileName(PROCESS_NAME)
-    app_icon = QIcon.fromTheme("audio-headset")
-    if app_icon.isNull():
-        app_icon = QIcon.fromTheme("audio-headphones")
+    app_icon = themes.icon("audio-headset", "audio-headphones")
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
     themes.apply(app, settings.get("theme", themes.AUTO))

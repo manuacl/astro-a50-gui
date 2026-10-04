@@ -13,7 +13,7 @@ import json
 import logging
 from pathlib import Path
 
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from i18n import TRANSLATIONS, t
@@ -23,6 +23,14 @@ AUTO = "auto"
 LOGGER = logging.getLogger(__name__)
 _native_palette = None  # desktop palette, captured on first use
 _current = AUTO
+
+
+def icon(*names: str) -> QIcon:
+    """The first of `names` the desktop's icon theme really has, else Qt's
+    best guess for the first. hasThemeIcon, not fromTheme().isNull(): fromTheme
+    falls back to a shorter name (network-wireless for network-wireless-hotspot),
+    so a second choice would never be tried."""
+    return QIcon.fromTheme(next((n for n in names if QIcon.hasThemeIcon(n)), names[0]))
 
 
 def current() -> str:
