@@ -2221,20 +2221,34 @@ class BalanceAndHelpTest(unittest.TestCase):
             with self.subTest(game=game):
                 self.assertEqual(gui.game_percent(gui.balance_from_game_percent(game)), game)
 
-    def test_voice_icon_is_drawn_in_the_text_colour(self):
+    def test_lucide_icons_follow_the_palette(self):
+        # Drawn in the palette's text colour when painted, so a theme switch,
+        # in the app or on the desktop, recolours them with nothing to redo.
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # CI has no display
-        from PyQt6.QtGui import QColor, QImageReader
+        from PyQt6.QtCore import QSize
+        from PyQt6.QtGui import QColor, QImageReader, QPalette
         from PyQt6.QtWidgets import QApplication
-        type(self)._qt_app = QApplication.instance() or QApplication([])
+        app = type(self)._qt_app = QApplication.instance() or QApplication([])
         if b"svg" not in [bytes(f) for f in QImageReader.supportedImageFormats()]:
-            self.skipTest("no Qt SVG plugin (qt6-svg): the app shows the microphone instead")
-        pixmap = themes.svg_pixmap("voice", QColor("#ff0000"), 20)
-        self.assertEqual((pixmap.width(), pixmap.height()), (20, 20))
-        image = pixmap.toImage()
-        colours = {image.pixelColor(x, y).name() for x in range(20) for y in range(20)
-                   if image.pixelColor(x, y).alpha() == 255}
-        self.assertEqual(colours, {"#ff0000"})
-        self.assertTrue(themes.svg_pixmap("missing", QColor("#ff0000"), 20).isNull())
+            self.skipTest("no Qt SVG plugin (qt6-svg): the app shows text instead")
+        used = ["speech", "gamepad-2", "radio-tower", "moon", "house", "trophy",
+                "headphones", "star", "trash-2"]
+        saved = app.palette()
+        try:
+            for colour in ("#ff0000", "#0000ff"):
+                palette = QPalette(saved)
+                palette.setColor(QPalette.ColorRole.WindowText, QColor(colour))
+                app.setPalette(palette)
+                for name in used:
+                    with self.subTest(icon=name, colour=colour):
+                        image = themes.lucide(name).pixmap(QSize(20, 20)).toImage()
+                        self.assertEqual((image.width(), image.height()), (20, 20))
+                        opaque = {image.pixelColor(x, y).name() for x in range(20) for y in range(20)
+                                  if image.pixelColor(x, y).alpha() == 255}
+                        self.assertEqual(opaque, {colour})
+        finally:
+            app.setPalette(saved)
+        self.assertTrue(themes.lucide("missing").isNull())
 
     def test_every_level_slider_has_help(self):
         for st, _label, tip in gui._slider_types():

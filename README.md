@@ -165,8 +165,8 @@ a JSON library on disk; only their *content* gets pushed to a slot.
   `status_worker.py`, `device_handle.py`, `base_info_dialog.py`,
   `menu_install.py` — application code
 - `themes/` — colour palettes for the Theme menu (JSON)
-- `icons/` — icons the desktop theme lacks (SVG, drawn in the text colour);
-  `voice.svg` is Lucide's "speech" icon, ISC licence in `LICENSE-lucide.txt`
+- `icons/` — the app's icons, from Lucide (SVG, drawn in the palette's text
+  colour so they follow the theme); licence in `LICENSE-lucide.txt`
 - `tests.py` — unit tests (run with `.venv/bin/python -m unittest tests.py`)
 - `scripts/` — reverse-engineering helpers (USB sniffing, one-shot probes,
   libvirt USB-passthrough udev wrapper). Not required to run the GUI; see

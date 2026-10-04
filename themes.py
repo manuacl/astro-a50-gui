@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import QBuffer, QSize
-from PyQt6.QtGui import QColor, QIcon, QImageReader, QPalette, QPixmap
+from PyQt6.QtGui import QColor, QIcon, QIconEngine, QImageReader, QPalette, QPixmap
 from PyQt6.QtWidgets import QApplication
 
 from i18n import TRANSLATIONS, t
@@ -38,8 +38,8 @@ ICONS_DIR = Path(__file__).resolve().parent / "icons"
 
 
 def svg_pixmap(name: str, color: QColor, size: int, ratio: float = 1.0) -> QPixmap:
-    """icons/<name>.svg drawn in `color` (its currentColor), so it follows the
-    theme like the desktop's icons; a null pixmap if the file can't be read."""
+    """icons/<name>.svg drawn in `color` (its currentColor); a null pixmap if
+    the file can't be read."""
     try:
         data = (ICONS_DIR / f"{name}.svg").read_bytes()
     except OSError:
@@ -51,6 +51,40 @@ def svg_pixmap(name: str, color: QColor, size: int, ratio: float = 1.0) -> QPixm
     pixmap = QPixmap.fromImage(reader.read())
     pixmap.setDevicePixelRatio(ratio)
     return pixmap
+
+
+class _LucideEngine(QIconEngine):
+    """Draws icons/<name>.svg in the palette's text colour each time it is
+    painted. The desktop's icons kept the desktop's colours: the app's Light
+    theme on a dark desktop, or a desktop switched while the app ran, left
+    them nearly invisible."""
+
+    def __init__(self, name: str):
+        super().__init__()
+        self._name = name
+
+    def clone(self):
+        return _LucideEngine(self._name)
+
+    def isNull(self):
+        return not (ICONS_DIR / f"{self._name}.svg").is_file()
+
+    def scaledPixmap(self, size, mode, state, scale):
+        group = QPalette.ColorGroup.Disabled if mode == QIcon.Mode.Disabled else QPalette.ColorGroup.Active
+        color = QApplication.palette().color(group, QPalette.ColorRole.WindowText)
+        return svg_pixmap(self._name, color, min(size.width(), size.height()), scale)
+
+    def pixmap(self, size, mode, state):
+        return self.scaledPixmap(size, mode, state, 1.0)
+
+    def paint(self, painter, rect, mode, state):
+        ratio = painter.device().devicePixelRatioF()
+        painter.drawPixmap(rect, self.scaledPixmap(rect.size(), mode, state, ratio))
+
+
+def lucide(name: str) -> QIcon:
+    """A Lucide icon from icons/ (ISC, see LICENSE-lucide.txt) that follows the palette."""
+    return QIcon(_LucideEngine(name))
 
 
 def current() -> str:
