@@ -23,6 +23,7 @@ package() {
   install -Dm644 -t "$pkgdir$app" $(ls *.py | grep -vx tests.py)
   install -Dm644 -t "$pkgdir$app/vendor" vendor/*.py
   install -Dm644 -t "$pkgdir$app/themes" themes/*.json
+  install -Dm644 -t "$pkgdir$app/icons" icons/*.svg
   # gui.py reads its version from it, for the About dialog.
   install -Dm644 -t "$pkgdir$app" pyproject.toml
   python -m compileall -q -d "$app" "$pkgdir$app"
@@ -51,4 +52,5 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="9886", ATTR{idProduct}=="002c", TAG+="uaccess
 EOF
 
   install -Dm644 vendor/LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/eh-fifty-LICENSE.txt"
+  install -Dm644 icons/LICENSE-lucide.txt "$pkgdir/usr/share/licenses/$pkgname/lucide-LICENSE.txt"
 }
