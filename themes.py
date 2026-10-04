@@ -13,7 +13,8 @@ import json
 import logging
 from pathlib import Path
 
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtCore import QBuffer, QSize
+from PyQt6.QtGui import QColor, QIcon, QImageReader, QPalette, QPixmap
 from PyQt6.QtWidgets import QApplication
 
 from i18n import TRANSLATIONS, t
@@ -23,6 +24,33 @@ AUTO = "auto"
 LOGGER = logging.getLogger(__name__)
 _native_palette = None  # desktop palette, captured on first use
 _current = AUTO
+
+
+def icon(*names: str) -> QIcon:
+    """The first of `names` the desktop's icon theme really has, else Qt's
+    best guess for the first. hasThemeIcon, not fromTheme().isNull(): fromTheme
+    falls back to a shorter name (network-wireless for network-wireless-hotspot),
+    so a second choice would never be tried."""
+    return QIcon.fromTheme(next((n for n in names if QIcon.hasThemeIcon(n)), names[0]))
+
+
+ICONS_DIR = Path(__file__).resolve().parent / "icons"
+
+
+def svg_pixmap(name: str, color: QColor, size: int, ratio: float = 1.0) -> QPixmap:
+    """icons/<name>.svg drawn in `color` (its currentColor), so it follows the
+    theme like the desktop's icons; a null pixmap if the file can't be read."""
+    try:
+        data = (ICONS_DIR / f"{name}.svg").read_bytes()
+    except OSError:
+        return QPixmap()
+    buf = QBuffer()
+    buf.setData(data.replace(b"currentColor", color.name().encode()))
+    reader = QImageReader(buf, b"svg")
+    reader.setScaledSize(QSize(round(size * ratio), round(size * ratio)))
+    pixmap = QPixmap.fromImage(reader.read())
+    pixmap.setDevicePixelRatio(ratio)
+    return pixmap
 
 
 def current() -> str:

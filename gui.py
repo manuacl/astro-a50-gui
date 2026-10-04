@@ -13,11 +13,17 @@ from PyQt6.QtCore import (
     QMetaObject,
     QProcess,
     QProcessEnvironment,
+    QSize,
     Qt,
     QThread,
     QTimer,
 )
-from PyQt6.QtGui import QAction, QActionGroup, QIcon
+from PyQt6.QtGui import (
+    QAction,
+    QActionGroup,
+    QIcon,
+    QPalette,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -85,25 +91,15 @@ def app_version() -> str:
 
 
 def _slider_types():
+    """Each level slider's type, label and hover help."""
     return [
-        (SliderType.MIC, t("lbl_mic_level")),
-        (SliderType.SIDE_TONE, t("lbl_sidetone")),
-        (SliderType.STREAM_PORT_MIX_MIC, t("lbl_stream_mic")),
-        (SliderType.STREAM_PORT_MIX_CHAT, t("lbl_stream_chat")),
-        (SliderType.STREAM_PORT_MIX_GAME, t("lbl_stream_game")),
-        (SliderType.STREAM_PORT_MIX_AUX, t("lbl_stream_aux")),
+        (SliderType.MIC, t("lbl_mic_level"), t("tip_mic_level")),
+        (SliderType.SIDE_TONE, t("lbl_sidetone"), t("tip_sidetone")),
+        (SliderType.STREAM_PORT_MIX_MIC, t("lbl_stream_mic"), t("tip_stream_mic")),
+        (SliderType.STREAM_PORT_MIX_CHAT, t("lbl_stream_chat"), t("tip_stream_chat")),
+        (SliderType.STREAM_PORT_MIX_GAME, t("lbl_stream_game"), t("tip_stream_game")),
+        (SliderType.STREAM_PORT_MIX_AUX, t("lbl_stream_aux"), t("tip_stream_aux")),
     ]
-
-
-# Help shown when hovering each level slider.
-_SLIDER_TIPS = {
-    SliderType.MIC: "tip_mic_level",
-    SliderType.SIDE_TONE: "tip_sidetone",
-    SliderType.STREAM_PORT_MIX_MIC: "tip_stream_mic",
-    SliderType.STREAM_PORT_MIX_CHAT: "tip_stream_chat",
-    SliderType.STREAM_PORT_MIX_GAME: "tip_stream_game",
-    SliderType.STREAM_PORT_MIX_AUX: "tip_stream_aux",
-}
 
 
 def game_percent(balance: int) -> int:
@@ -114,15 +110,6 @@ def game_percent(balance: int) -> int:
 def balance_from_game_percent(game: int) -> int:
     """The eh-fifty balance for a game percentage."""
     return 255 - round(game * 255 / 100)
-
-
-def balance_to_write(loaded: int | None, game: int) -> int | None:
-    """The default balance a Sync must write, or None while the slider shows
-    what the base holds. Compared in percent, so a balance set with the headset
-    buttons (113, say) isn't rewritten as 112 on every Sync."""
-    if loaded is not None and game_percent(loaded) == game:
-        return None
-    return balance_from_game_percent(game)
 
 
 def safe(call, default=None):
@@ -157,16 +144,13 @@ class A50Window(QMainWindow):
         # The settings controls' values as last read from or written to the
         # device: Sync is due while they differ (see _controls).
         self._synced: dict = {}
-        self._loaded_balance: int | None = None
         # The device is shared between the main UI thread, the EQ widget,
         # and the status worker thread; the lock serialises USB HID access.
         # RLock allows nested acquisitions (reload_all wraps refresh_status).
         self._device_lock = threading.RLock()
 
         self.setWindowTitle(t("window_title"))
-        window_icon = QIcon.fromTheme("audio-headset")
-        if window_icon.isNull():
-            window_icon = QIcon.fromTheme("audio-headphones")
+        window_icon = themes.icon("audio-headset", "audio-headphones")
         if not window_icon.isNull():
             self.setWindowIcon(window_icon)
         self.setMinimumWidth(480)
@@ -233,29 +217,39 @@ class A50Window(QMainWindow):
         for lbl in (self.lbl_voice_pct, self.lbl_game_pct):
             lbl.setMinimumWidth(width)
         self.lbl_voice_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self._icon_label("audio-input-microphone", t("lbl_voice")))
+        self.lbl_voice_icon = QLabel()
+        self.lbl_voice_icon.setToolTip(t("lbl_voice"))
+        self.lbl_game_icon = QLabel()
+        self.lbl_game_icon.setToolTip(t("lbl_game"))
+        self._show_balance_icons()
+        layout.addWidget(self.lbl_voice_icon)
         layout.addWidget(self.lbl_voice_pct)
         layout.addWidget(self.sld_balance, 1)
         layout.addWidget(self.lbl_game_pct)
-        layout.addWidget(self._icon_label("input-gamepad", t("lbl_game")))
+        layout.addWidget(self.lbl_game_icon)
         return box
+
+    def _show_balance_icons(self, size: int = 20) -> None:
+        """Both ends of the balance, drawn for the current palette and screen
+        scale, and redrawn when either changes (see event)."""
+        ratio = self.devicePixelRatioF()
+        color = self.palette().color(QPalette.ColorRole.WindowText)
+        # A head speaking (Lucide "speech", icons/), else the theme's microphone.
+        voice = themes.svg_pixmap("voice", color, size, ratio)
+        if voice.isNull():
+            voice = themes.icon("audio-input-microphone").pixmap(QSize(size, size), ratio)
+        game = themes.icon("input-gamepad").pixmap(QSize(size, size), ratio)
+        for lbl, pixmap in ((self.lbl_voice_icon, voice), (self.lbl_game_icon, game)):
+            if pixmap.isNull():
+                lbl.setText(lbl.toolTip())
+            else:
+                lbl.setPixmap(pixmap)
 
     def _show_balance(self, game: int | None) -> None:
         voice_text = t("na") if game is None else f"{100 - game}%"
         game_text = t("na") if game is None else f"{game}%"
         self.lbl_voice_pct.setText(voice_text)
         self.lbl_game_pct.setText(game_text)
-
-    @staticmethod
-    def _icon_label(icon_name: str, tooltip: str, size: int = 20) -> QLabel:
-        lbl = QLabel()
-        icon = QIcon.fromTheme(icon_name)
-        if not icon.isNull():
-            lbl.setPixmap(icon.pixmap(size, size))
-        else:
-            lbl.setText(tooltip)
-        lbl.setToolTip(tooltip)
-        return lbl
 
 
     def _build_mic_group(self):
@@ -270,8 +264,8 @@ class A50Window(QMainWindow):
         layout.addWidget(lbl, 0, 0)
         self.cmb_gate = QComboBox()
         self.cmb_gate.setToolTip(t("tip_noise_gate"))
-        # Outline icons, like the balance's gamepad and microphone, picturing
-        # what Command Center shows: antenna, moon, house and trophy.
+        # Outline icons picturing what Command Center shows: antenna, moon,
+        # house and trophy.
         gate_icons = {
             NoiseGateMode.STREAMING: ("network-wireless-hotspot", "camera-video"),
             NoiseGateMode.NIGHT: ("weather-clear-night-symbolic", "weather-clear-night"),
@@ -279,11 +273,7 @@ class A50Window(QMainWindow):
             NoiseGateMode.TOURNAMENT: ("games-highscores", "applications-games"),
         }
         for m in NoiseGateMode:
-            icon = QIcon()
-            for theme_name in gate_icons.get(m, ()):
-                icon = QIcon.fromTheme(theme_name)
-                if not icon.isNull():
-                    break
+            icon = themes.icon(*gate_icons[m]) if m in gate_icons else QIcon()
             self.cmb_gate.addItem(icon, gate_label(m.name), m)
         self.cmb_gate.currentIndexChanged.connect(self._on_gate_changed)
         layout.addWidget(self.cmb_gate, 0, 1)
@@ -293,12 +283,12 @@ class A50Window(QMainWindow):
         box = QGroupBox(t("grp_levels"))
         layout = QGridLayout(box)
         self.slider_widgets = {}
-        for row, (st, label) in enumerate(_slider_types()):
+        for row, (st, label, tip) in enumerate(_slider_types()):
             name = QLabel(label)
-            name.setToolTip(t(_SLIDER_TIPS[st]))
+            name.setToolTip(tip)
             layout.addWidget(name, row, 0)
             sld = QSlider(Qt.Orientation.Horizontal)
-            sld.setToolTip(t(_SLIDER_TIPS[st]))
+            sld.setToolTip(tip)
             sld.setRange(0, 100)
             sld.setSingleStep(1)
             sld.setPageStep(5)
@@ -585,12 +575,12 @@ class A50Window(QMainWindow):
             # A control whose read failed is disabled, like the sliders below,
             # so Sync never writes a default that was never loaded.
             self.sld_balance.setEnabled(balance is not None)
-            self._loaded_balance = balance
+            game = None
             if balance is not None:
-                self.sld_balance.setValue(game_percent(balance))
-                self._show_balance(game_percent(balance))
-            else:
-                self._show_balance(None)
+                game = game_percent(balance)
+                self.sld_balance.setValue(game)
+            # Explicit: setValue doesn't signal when the value is unchanged.
+            self._show_balance(game)
 
             gate_idx = self.cmb_gate.findData(gate) if gate is not None else -1
             self.cmb_gate.setEnabled(gate_idx >= 0)
@@ -705,13 +695,11 @@ class A50Window(QMainWindow):
                 # The slider shows the live balance (get_balance), which the
                 # headset buttons change; write the default balance only when
                 # the user moved the slider, so Sync never persists a button
-                # adjustment as the power-on default.
-                balance = None
-                if self.sld_balance.isEnabled():
-                    balance = balance_to_write(self._loaded_balance, self.sld_balance.value())
-                if balance is not None:
-                    self.device.set_default_balance(balance)
-                    self._loaded_balance = balance
+                # adjustment as the power-on default. Compared in percent, so a
+                # balance of 113 set with the buttons isn't rewritten as 112.
+                game = self.sld_balance.value()
+                if self.sld_balance.isEnabled() and game != self._synced.get("balance"):
+                    self.device.set_default_balance(balance_from_game_percent(game))
                 gate_mode = self.cmb_gate.currentData()
                 if self.cmb_gate.isEnabled() and gate_mode is not None:
                     self.device.set_noise_gate_mode(gate_mode)
@@ -730,6 +718,17 @@ class A50Window(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
             self._apply_sync_style()
+
+    def event(self, event):
+        # Theme switch, first show on a screen, or a move to a screen with
+        # another scale: the balance icons are pixmaps, drawn again.
+        if event.type() in (
+            QEvent.Type.PaletteChange,
+            QEvent.Type.Show,
+            QEvent.Type.DevicePixelRatioChange,
+        ) and hasattr(self, "lbl_voice_icon"):
+            self._show_balance_icons()
+        return super().event(event)
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.ActivationChange:
@@ -790,9 +789,7 @@ def main():
     # the headset icon survives across windows / taskbar / Alt-Tab.
     app.setApplicationName(PROCESS_NAME)
     app.setDesktopFileName(PROCESS_NAME)
-    app_icon = QIcon.fromTheme("audio-headset")
-    if app_icon.isNull():
-        app_icon = QIcon.fromTheme("audio-headphones")
+    app_icon = themes.icon("audio-headset", "audio-headphones")
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
     themes.apply(app, settings.get("theme", themes.AUTO))

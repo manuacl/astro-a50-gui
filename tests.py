@@ -1823,19 +1823,41 @@ class SweepRegressionTest(unittest.TestCase):
         window.device.set_alert_volume.assert_not_called()
 
     def test_sync_writes_the_default_balance_only_when_the_slider_moved(self):
-        window = self._window(get_balance=120)
+        class Slider:
+            v, enabled = 0, False
+
+            def setValue(self, v):
+                self.v = v
+
+            def value(self):
+                return self.v
+
+            def setEnabled(self, enabled):
+                self.enabled = enabled
+
+            def isEnabled(self):
+                return self.enabled
+
+        window = self._window(get_balance=113)
+        window.sld_balance = Slider()
         window.cmb_gate.findData.return_value = 0
+        window._controls = gui.A50Window._controls.__get__(window)
+
+        def sync():
+            with mock.patch.object(gui, "QApplication"):
+                gui.A50Window._on_save(window)
+
         gui.A50Window.reload_all(window)
-        window.sld_balance.isEnabled.return_value = True
-        # The slider is the game percentage: untouched, it shows the base's 120.
-        window.sld_balance.value.return_value = gui.game_percent(120)
-        with mock.patch.object(gui, "QApplication"):
-            gui.A50Window._on_save(window)
+        # 113 (set with the headset buttons) is recorded as 56% game...
+        self.assertEqual(window._synced["balance"], gui.game_percent(113))
+        # ...so Sync with the slider untouched writes nothing, not a rounded 112.
+        sync()
         window.device.set_default_balance.assert_not_called()
-        window.sld_balance.value.return_value = 20
-        with mock.patch.object(gui, "QApplication"):
-            gui.A50Window._on_save(window)
+        window.sld_balance.setValue(20)
+        sync()
         window.device.set_default_balance.assert_called_once_with(gui.balance_from_game_percent(20))
+        sync()  # synced at 20 now: nothing new to write
+        window.device.set_default_balance.assert_called_once()
 
     @staticmethod
     def _settings_window():
@@ -1854,7 +1876,7 @@ class SweepRegressionTest(unittest.TestCase):
 
         window = mock.MagicMock()
         window._loading = False
-        window.sld_balance, window.cmb_gate, window.sld_alert = Control(128), Control(1), Control(50)
+        window.sld_balance, window.cmb_gate, window.sld_alert = Control(50), Control(1), Control(50)
         window.slider_widgets = {"MIC": (Control(40), mock.MagicMock())}
         window._SYNC_STYLE_DIRTY = gui.A50Window._SYNC_STYLE_DIRTY
         window._SYNC_STYLE_SYNCED = gui.A50Window._SYNC_STYLE_SYNCED
@@ -1891,10 +1913,10 @@ class SweepRegressionTest(unittest.TestCase):
         window.slider_widgets["MIC"][0].v = 40
         gui.A50Window._settings_changed(window)
         self._assert_sync(window, orange=False)
-        window.sld_balance.v = 130
+        window.sld_balance.v = 51
         gui.A50Window._settings_changed(window)
         self._assert_sync(window, orange=True)
-        window.sld_balance.v = 128
+        window.sld_balance.v = 50
         gui.A50Window._settings_changed(window)
         self._assert_sync(window, orange=False)
 
@@ -2199,18 +2221,41 @@ class BalanceAndHelpTest(unittest.TestCase):
             with self.subTest(game=game):
                 self.assertEqual(gui.game_percent(gui.balance_from_game_percent(game)), game)
 
-    def test_sync_leaves_a_balance_set_by_the_headset_alone(self):
-        # 113 (set with the headset buttons) reads as 56% game; with the
-        # slider untouched, Sync writes nothing, not a rounded 112.
-        self.assertIsNone(gui.balance_to_write(113, gui.game_percent(113)))
-        self.assertEqual(gui.balance_to_write(113, 60), gui.balance_from_game_percent(60))
-        self.assertEqual(gui.balance_to_write(None, 50), gui.balance_from_game_percent(50))
+    def test_voice_icon_is_drawn_in_the_text_colour(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # CI has no display
+        from PyQt6.QtGui import QColor, QImageReader
+        from PyQt6.QtWidgets import QApplication
+        type(self)._qt_app = QApplication.instance() or QApplication([])
+        if b"svg" not in [bytes(f) for f in QImageReader.supportedImageFormats()]:
+            self.skipTest("no Qt SVG plugin (qt6-svg): the app shows the microphone instead")
+        pixmap = themes.svg_pixmap("voice", QColor("#ff0000"), 20)
+        self.assertEqual((pixmap.width(), pixmap.height()), (20, 20))
+        image = pixmap.toImage()
+        colours = {image.pixelColor(x, y).name() for x in range(20) for y in range(20)
+                   if image.pixelColor(x, y).alpha() == 255}
+        self.assertEqual(colours, {"#ff0000"})
+        self.assertTrue(themes.svg_pixmap("missing", QColor("#ff0000"), 20).isNull())
 
     def test_every_level_slider_has_help(self):
-        for st, _label in gui._slider_types():
+        for st, _label, tip in gui._slider_types():
             with self.subTest(slider=st.name):
-                key = gui._SLIDER_TIPS[st]
-                self.assertNotEqual(i18n.t(key), key)
+                self.assertFalse(tip.startswith("tip_"))
+
+    def test_every_language_has_every_string(self):
+        # t() falls back to English, so a missing string would go unnoticed.
+        english = set(i18n.TRANSLATIONS["en"])
+        for lang, strings in i18n.TRANSLATIONS.items():
+            with self.subTest(lang=lang):
+                self.assertEqual(set(strings), english)
+
+    def test_theme_icon_takes_the_first_name_the_theme_has(self):
+        with mock.patch.object(themes.QIcon, "hasThemeIcon", side_effect=lambda n: n == "b"), \
+                mock.patch.object(themes.QIcon, "fromTheme") as from_theme:
+            themes.icon("a", "b")
+            from_theme.assert_called_with("b")
+            # None found: Qt's own fallback for the first name.
+            themes.icon("x", "y")
+            from_theme.assert_called_with("x")
 
 
 if __name__ == "__main__":

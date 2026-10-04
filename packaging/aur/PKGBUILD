@@ -6,8 +6,8 @@ pkgrel=1
 pkgdesc="Qt GUI to configure the Astro A50 Gen 4 wireless headset (EQ, balance, mic, noise gate)"
 arch=('any')
 url="https://github.com/manuacl/astro-a50-gui"
-license=('GPL-3.0-or-later' 'MIT')
-depends=('python' 'python-pyqt6' 'python-pyusb')
+license=('GPL-3.0-or-later' 'MIT' 'ISC')
+depends=('python' 'python-pyqt6' 'python-pyusb' 'qt6-svg')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('b50225bd248ba16f90fe3a53c2a0f45ce663ec8f2790319e530fd9184b0dd4e3')
 
@@ -23,6 +23,7 @@ package() {
   install -Dm644 -t "$pkgdir$app" $(ls *.py | grep -vx tests.py)
   install -Dm644 -t "$pkgdir$app/vendor" vendor/*.py
   install -Dm644 -t "$pkgdir$app/themes" themes/*.json
+  install -Dm644 -t "$pkgdir$app/icons" icons/*.svg
   # gui.py reads its version from it, for the About dialog.
   install -Dm644 -t "$pkgdir$app" pyproject.toml
   python -m compileall -q -d "$app" "$pkgdir$app"
@@ -51,4 +52,5 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="9886", ATTR{idProduct}=="002c", TAG+="uaccess
 EOF
 
   install -Dm644 vendor/LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/eh-fifty-LICENSE.txt"
+  install -Dm644 icons/LICENSE-lucide.txt "$pkgdir/usr/share/licenses/$pkgname/lucide-LICENSE.txt"
 }
