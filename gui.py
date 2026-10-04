@@ -213,7 +213,7 @@ class A50Window(QMainWindow):
         for lbl in (self.lbl_voice_pct, self.lbl_game_pct):
             lbl.setMinimumWidth(width)
         self.lbl_voice_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self._icon_label("im-user", t("lbl_voice")))
+        layout.addWidget(self._icon_label("audio-input-microphone", t("lbl_voice")))
         layout.addWidget(self.lbl_voice_pct)
         layout.addWidget(self.sld_balance, 1)
         layout.addWidget(self.lbl_game_pct)
