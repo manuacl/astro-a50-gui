@@ -2223,16 +2223,18 @@ class BalanceAndHelpTest(unittest.TestCase):
 
     def test_voice_icon_is_drawn_in_the_text_colour(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # CI has no display
-        from PyQt6.QtGui import QColor
+        from PyQt6.QtGui import QColor, QImageReader
         from PyQt6.QtWidgets import QApplication
         type(self)._qt_app = QApplication.instance() or QApplication([])
-        pixmap = gui.svg_pixmap("voice", QColor("#ff0000"), 20)
+        if b"svg" not in [bytes(f) for f in QImageReader.supportedImageFormats()]:
+            self.skipTest("no Qt SVG plugin (qt6-svg): the app shows the microphone instead")
+        pixmap = themes.svg_pixmap("voice", QColor("#ff0000"), 20)
         self.assertEqual((pixmap.width(), pixmap.height()), (20, 20))
         image = pixmap.toImage()
         colours = {image.pixelColor(x, y).name() for x in range(20) for y in range(20)
                    if image.pixelColor(x, y).alpha() == 255}
         self.assertEqual(colours, {"#ff0000"})
-        self.assertTrue(gui.svg_pixmap("missing", QColor("#ff0000"), 20).isNull())
+        self.assertTrue(themes.svg_pixmap("missing", QColor("#ff0000"), 20).isNull())
 
     def test_every_level_slider_has_help(self):
         for st, _label, tip in gui._slider_types():

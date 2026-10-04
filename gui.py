@@ -9,7 +9,6 @@ from contextlib import suppress
 from pathlib import Path
 
 from PyQt6.QtCore import (
-    QBuffer,
     QEvent,
     QMetaObject,
     QProcess,
@@ -22,11 +21,8 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction,
     QActionGroup,
-    QColor,
     QIcon,
-    QImageReader,
     QPalette,
-    QPixmap,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -104,25 +100,6 @@ def _slider_types():
         (SliderType.STREAM_PORT_MIX_GAME, t("lbl_stream_game"), t("tip_stream_game")),
         (SliderType.STREAM_PORT_MIX_AUX, t("lbl_stream_aux"), t("tip_stream_aux")),
     ]
-
-
-ICONS_DIR = Path(__file__).resolve().parent / "icons"
-
-
-def svg_pixmap(name: str, color: QColor, size: int, ratio: float = 1.0) -> QPixmap:
-    """icons/<name>.svg drawn in `color` (its currentColor), so it follows the
-    theme like the desktop's icons; a null pixmap if the file can't be read."""
-    try:
-        data = (ICONS_DIR / f"{name}.svg").read_bytes()
-    except OSError:
-        return QPixmap()
-    buf = QBuffer()
-    buf.setData(data.replace(b"currentColor", color.name().encode()))
-    reader = QImageReader(buf, b"svg")
-    reader.setScaledSize(QSize(round(size * ratio), round(size * ratio)))
-    pixmap = QPixmap.fromImage(reader.read())
-    pixmap.setDevicePixelRatio(ratio)
-    return pixmap
 
 
 def game_percent(balance: int) -> int:
@@ -240,43 +217,39 @@ class A50Window(QMainWindow):
         for lbl in (self.lbl_voice_pct, self.lbl_game_pct):
             lbl.setMinimumWidth(width)
         self.lbl_voice_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        # A head speaking (Lucide "speech", icons/), redrawn on theme change.
         self.lbl_voice_icon = QLabel()
         self.lbl_voice_icon.setToolTip(t("lbl_voice"))
-        self._show_voice_icon()
+        self.lbl_game_icon = QLabel()
+        self.lbl_game_icon.setToolTip(t("lbl_game"))
+        self._show_balance_icons()
         layout.addWidget(self.lbl_voice_icon)
         layout.addWidget(self.lbl_voice_pct)
         layout.addWidget(self.sld_balance, 1)
         layout.addWidget(self.lbl_game_pct)
-        layout.addWidget(self._icon_label("input-gamepad", t("lbl_game")))
+        layout.addWidget(self.lbl_game_icon)
         return box
 
-    def _show_voice_icon(self, size: int = 20) -> None:
+    def _show_balance_icons(self, size: int = 20) -> None:
+        """Both ends of the balance, drawn for the current palette and screen
+        scale, and redrawn when either changes (see event)."""
+        ratio = self.devicePixelRatioF()
         color = self.palette().color(QPalette.ColorRole.WindowText)
-        pixmap = svg_pixmap("voice", color, size, self.devicePixelRatioF())
-        if pixmap.isNull():
-            pixmap = themes.icon("audio-input-microphone").pixmap(size, size)
-        if pixmap.isNull():
-            self.lbl_voice_icon.setText(t("lbl_voice"))
-        else:
-            self.lbl_voice_icon.setPixmap(pixmap)
+        # A head speaking (Lucide "speech", icons/), else the theme's microphone.
+        voice = themes.svg_pixmap("voice", color, size, ratio)
+        if voice.isNull():
+            voice = themes.icon("audio-input-microphone").pixmap(QSize(size, size), ratio)
+        game = themes.icon("input-gamepad").pixmap(QSize(size, size), ratio)
+        for lbl, pixmap in ((self.lbl_voice_icon, voice), (self.lbl_game_icon, game)):
+            if pixmap.isNull():
+                lbl.setText(lbl.toolTip())
+            else:
+                lbl.setPixmap(pixmap)
 
     def _show_balance(self, game: int | None) -> None:
         voice_text = t("na") if game is None else f"{100 - game}%"
         game_text = t("na") if game is None else f"{game}%"
         self.lbl_voice_pct.setText(voice_text)
         self.lbl_game_pct.setText(game_text)
-
-    @staticmethod
-    def _icon_label(icon_name: str, tooltip: str, size: int = 20) -> QLabel:
-        lbl = QLabel()
-        icon = themes.icon(icon_name)
-        if not icon.isNull():
-            lbl.setPixmap(icon.pixmap(size, size))
-        else:
-            lbl.setText(tooltip)
-        lbl.setToolTip(tooltip)
-        return lbl
 
 
     def _build_mic_group(self):
@@ -746,9 +719,18 @@ class A50Window(QMainWindow):
             QApplication.restoreOverrideCursor()
             self._apply_sync_style()
 
+    def event(self, event):
+        # Theme switch, first show on a screen, or a move to a screen with
+        # another scale: the balance icons are pixmaps, drawn again.
+        if event.type() in (
+            QEvent.Type.PaletteChange,
+            QEvent.Type.Show,
+            QEvent.Type.DevicePixelRatioChange,
+        ) and hasattr(self, "lbl_voice_icon"):
+            self._show_balance_icons()
+        return super().event(event)
+
     def changeEvent(self, event):
-        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "lbl_voice_icon"):
-            self._show_voice_icon()
         if event.type() == QEvent.Type.ActivationChange:
             if self.isActiveWindow():
                 if not self.refresh_timer.isActive():
