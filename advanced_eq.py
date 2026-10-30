@@ -14,8 +14,6 @@ from PyQt6.QtWidgets import (
 import astroeq
 from i18n import t
 
-_SHELVES = (1, 5)  # low and high shelves: no bandwidth
-
 
 class AdvancedEqDialog(QDialog):
     """Frequency and bandwidth of every band of one EQ slot."""
@@ -27,6 +25,7 @@ class AdvancedEqDialog(QDialog):
         self._original = dict(enumerate(bands, start=1))
         self._freq: dict[int, QSpinBox] = {}
         self._bw: dict[int, QDoubleSpinBox] = {}
+        self._shown: dict[int, tuple[int, float]] = {}
         grid = QGridLayout()
         for col, key in enumerate(("col_band", "col_freq", "col_bw")):
             grid.addWidget(QLabel(f"<b>{t(key)}</b>"), 0, col)
@@ -43,7 +42,7 @@ class AdvancedEqDialog(QDialog):
             spin.setToolTip(t("tip_freq"))
             grid.addWidget(spin, b, 1)
             self._freq[b] = spin
-            if b in _SHELVES:
+            if b in astroeq.SHELVES:
                 shelf = QLabel("—")
                 shelf.setToolTip(t("tip_shelf"))
                 grid.addWidget(shelf, b, 2)
@@ -56,6 +55,10 @@ class AdvancedEqDialog(QDialog):
             width.setToolTip(t("tip_bw"))
             grid.addWidget(width, b, 2)
             self._bw[b] = width
+        # What the boxes show, once clamped to the limits and rounded to their
+        # decimals: a box still showing it was left untouched.
+        self._shown = {b: (self._freq[b].value(), self._bw[b].value() if b in self._bw else 0)
+                       for b in self._original}
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -67,19 +70,16 @@ class AdvancedEqDialog(QDialog):
     def values(self) -> dict[int, tuple[int, int]]:
         """(frequency, raw bandwidth) per band, 0 for the shelves' bandwidth.
 
-        A bandwidth left as shown keeps its exact raw value, so pressing OK
-        without touching anything changes nothing, even where two decimals
-        round it (eh-fifty's minimum, 409, shows as 0.10)."""
-        return {
-            b: (self._freq[b].value(),
-                raw_bandwidth(bw, self._bw[b].value()) if b in self._bw else 0)
-            for b, (_freq, bw) in self._original.items()
-        }
-
-
-def raw_bandwidth(original: int, shown: float) -> int:
-    """The raw bandwidth for a value shown with two decimals: the original one
-    if it was left as shown, else the new value x 4096."""
-    if round(original / astroeq.BANDWIDTH_SCALE, 2) == round(shown, 2):
-        return original
-    return round(shown * astroeq.BANDWIDTH_SCALE)
+        A value left as shown keeps its exact original, so pressing OK without
+        touching anything changes nothing, even where the box rounds it
+        (eh-fifty's minimum, 409, shows as 0.10) or clamps it to the limits."""
+        values = {}
+        for b, (freq, bw) in self._original.items():
+            shown_freq, shown_bw = self._shown[b]
+            new_freq = self._freq[b].value()
+            if b not in self._bw:
+                bw = 0
+            elif self._bw[b].value() != shown_bw:
+                bw = astroeq.raw_bandwidth(self._bw[b].value())
+            values[b] = (freq if new_freq == shown_freq else new_freq, bw)
+        return values

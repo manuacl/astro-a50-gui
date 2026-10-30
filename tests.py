@@ -675,14 +675,40 @@ class AdvancedEqTest(unittest.TestCase):
         self.assertEqual(dialog.values()[2], (1775, 10240))
         self.assertEqual(dialog.values()[3], (2000, 409))
 
-    def test_raw_bandwidth_keeps_values_left_as_shown(self):
-        self.assertEqual(advanced_eq.raw_bandwidth(409, 0.1), 409)  # eh-fifty's minimum, shown 0.10
-        self.assertEqual(advanced_eq.raw_bandwidth(9011, 2.2), 9011)
-        self.assertEqual(advanced_eq.raw_bandwidth(9011, 2.5), 10240)
+    def test_values_the_boxes_clamp_come_back_untouched(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # CI has no display
+        from PyQt6.QtWidgets import QApplication
+        type(self)._qt_app = QApplication.instance() or QApplication([])
+        # Out of eh-fifty's limits, as an unwritten slot of the base could hold.
+        bands = [(20, 0), (1775, 0), (4664, 20000), (8210, 9011), (20000, 0)]
+        dialog = advanced_eq.AdvancedEqDialog(1, bands)
+        self.assertEqual(dialog.values(), dict(enumerate(bands, start=1)))
+        dialog._bw[2].setValue(2.5)
+        self.assertEqual(dialog.values()[2], (1775, 10240))
+
+    def test_a_reload_while_the_dialog_is_open_drops_its_values(self):
+        media = templates._EQ_TEMPLATES["MEDIA"]
+        data = {s: {"name": "MEDIA", "gain": list(media["gain"]), "bands": dict(media["bands"])}
+                for s in (1, 2, 3)}
+        widget = _reload_widget(data)
+        widget.reload_under_lock(active_eq_preset=1)
+        values = self._as_shown(widget)
+        values[3] = (2000, values[3][1])
+
+        def exec_with_reload():
+            data[1]["bands"][2] = (500, 8192)  # the base reconnects with other bands
+            widget.reload_under_lock(active_eq_preset=1)
+            return True
+
+        dialog = mock.MagicMock(exec=exec_with_reload, values=lambda: values)
+        with mock.patch("eq_widget.AdvancedEqDialog", return_value=dialog):
+            widget._on_advanced()
+        self.assertEqual(widget._slot_pending[1], set())
+        self.assertEqual(widget._slot_bands[1][2][0], media["bands"][3][0])
 
     def test_ok_without_changes_does_nothing(self):
         widget = self._widget()
-        widget.apply_band_settings(1, self._as_shown(widget))
+        widget._apply_band_settings(1, self._as_shown(widget))
         self.assertEqual(widget._slot_pending[1], set())
         self.assertEqual(widget._slot_bw_edits[1], {})
 
@@ -692,7 +718,7 @@ class AdvancedEqTest(unittest.TestCase):
         values = self._as_shown(widget)
         values[3] = (2000, values[3][1])  # new frequency
         values[2] = (values[2][0], 10240)  # bandwidth 2.5
-        widget.apply_band_settings(1, values)
+        widget._apply_band_settings(1, values)
         self.assertEqual(widget._slot_pending[1], {2, 3})
         self.assertEqual(widget._slot_bands[1][2][0], 2000)
         self.assertEqual(widget._slot_modified[1], {2, 3})
@@ -711,7 +737,7 @@ class AdvancedEqTest(unittest.TestCase):
         values = self._as_shown(widget)
         self.assertEqual(values[3][1], 10240)
         values[2] = (values[2][0], 6144)
-        widget.apply_band_settings(1, values)
+        widget._apply_band_settings(1, values)
         widget.push_pending_to_device()
         widget.device.set_eq_preset_freq_and_bw.assert_any_call(1, 3, bands[3][0], 10240)
 
@@ -720,7 +746,7 @@ class AdvancedEqTest(unittest.TestCase):
         widget._device_lock = threading.RLock()
         values = self._as_shown(widget)
         values[4] = (5000, 4096)
-        widget.apply_band_settings(1, values)
+        widget._apply_band_settings(1, values)
         with mock.patch("eq_widget.QApplication"), mock.patch("eq_widget._save_user_templates"):
             widget._persist_and_push(1, "Mine", is_new=True, btn=mock.MagicMock(),
                                      busy_key="btn_apply_busy", idle_key="btn_apply")
@@ -733,7 +759,7 @@ class AdvancedEqTest(unittest.TestCase):
         widget = self._widget()
         values = self._as_shown(widget)
         values[2] = (values[2][0], 10240)
-        widget.apply_band_settings(1, values)
+        widget._apply_band_settings(1, values)
         widget._on_reset_templates()
         self.assertEqual(widget._slot_bw_edits[1], {})
         self.assertEqual(widget._slot_pending[1], set())
@@ -744,7 +770,7 @@ class AdvancedEqTest(unittest.TestCase):
         widget = self._widget()
         values = self._as_shown(widget)
         values[2] = (values[2][0], 10240)
-        widget.apply_band_settings(1, values)
+        widget._apply_band_settings(1, values)
         widget.reload_under_lock(active_eq_preset=1)
         self.assertEqual(widget._slot_bw_edits[1], {})
         widget._on_band_modified(1, 0)
@@ -1575,6 +1601,35 @@ class EqSlotReferenceSecondReviewTest(unittest.TestCase):
         widget._on_reset_templates()  # queues MEDIA, bandwidths included
         self.assertEqual(widget._slot_pending[1], {1, 2, 3, 4, 5})
         self.assertEqual(widget._slot_modified[1], set())
+
+    def _base_with_own_bandwidth(self):
+        """Slot 1 holds MEDIA with band 3 at a bandwidth set in Command Center."""
+        media = templates._EQ_TEMPLATES["MEDIA"]
+        bands = dict(media["bands"])
+        bands[3] = (bands[3][0], bands[3][1] + 1000)
+        base = {"name": "MEDIA", "gain": list(media["gain"]), "bands": bands}
+        widget = _reload_widget({1: base, 2: dict(_ARCTURUS_ON_BASE), 3: dict(_ARCTURUS_ON_BASE)})
+        widget.reload_under_lock(1)
+        return widget, bands[3][1]
+
+    def _written_bandwidth(self, widget, band):
+        calls = widget.device.set_eq_preset_freq_and_bw.call_args_list
+        return [c.args[3] for c in calls if c.args[1] == band][-1]
+
+    def test_a_gain_drag_keeps_the_bases_own_bandwidths(self):
+        widget, own = self._base_with_own_bandwidth()
+        widget._on_band_modified(1, 5)
+        self.assertEqual(widget._slot_modified[1], {1, 3})
+        widget.push_pending_to_device()
+        self.assertEqual(self._written_bandwidth(widget, 3), own)
+
+    def test_create_preset_writes_the_bases_own_bandwidths(self):
+        widget, own = self._base_with_own_bandwidth()
+        widget._device_lock = threading.RLock()
+        with mock.patch("eq_widget.QApplication"), mock.patch("eq_widget._save_user_templates"):
+            widget._persist_and_push(1, "Mine", is_new=True, btn=mock.MagicMock(),
+                                     busy_key="btn_apply_busy", idle_key="btn_apply")
+        self.assertEqual(self._written_bandwidth(widget, 3), own)
 
     def test_sync_redefining_a_user_preset_queues_the_other_slots_showing_it(self):
         mine = {"gain": [1] * 5, "bands": dict(templates._EQ_TEMPLATES["MEDIA"]["bands"])}
