@@ -12,6 +12,7 @@ built on top of the [eh-fifty](https://github.com/tdryer/eh-fifty) library.
 - EQ presets with the 5 builtin Astro Command Center templates
   (A50 MOD KIT, ASTRO, MEDIA, PRO, STUDIO), reverse-engineered via USB capture
 - Per-band gain editing via a draggable bargraph (orange = modified)
+- Per-band centre frequency and bandwidth in the EQ's advanced settings
 - User-defined EQ presets:
   - Create from any modified state (asks for a name)
   - Update in place (only enabled for user presets)
@@ -135,6 +136,9 @@ a JSON library on disk; only their *content* gets pushed to a slot.
   bars turn orange.
 - **Réinitialiser**: discard local edits, reload the template's original
   values. Enabled only when bars are modified.
+- **Avancé…**: set each band's centre frequency (80-15000 Hz) and,
+  for bands 2-4, its bandwidth (0.1-3.0; bands 1 and 5 are shelves). Changed
+  bands turn orange and are pushed on the next sync, like a dragged bar.
 - **Sauvegarder**: update the current user preset in place (only enabled when
   the slot points at a user preset *and* has modified bars). Also writes the
   new state to the device immediately.
@@ -163,7 +167,7 @@ a JSON library on disk; only their *content* gets pushed to a slot.
 - `gui.py`, `eq_widget.py`, `eq_meter.py`, `templates.py`, `i18n.py`,
   `settings.py`, `themes.py`, `raw_request.py`, `process_lock.py`,
   `status_worker.py`, `device_handle.py`, `base_info_dialog.py`,
-  `menu_install.py` — application code
+  `menu_install.py`, `advanced_eq.py` — application code
 - `themes/` — colour palettes for the Theme menu (JSON)
 - `icons/` — the app's icons, from Lucide (SVG, drawn in the palette's text
   colour so they follow the theme); licence in `LICENSE-lucide.txt`
@@ -211,11 +215,13 @@ Covers:
   one `_save_user_templates` call, device receives name/gain/5 bands/
   `save_values`, slot state reset, bandwidths inherited from the previous
   template (shelf bands 1 and 5 forced to 0)
+- Advanced EQ settings: the dialog uses eh-fifty's limits and gives back
+  what it showed when nothing is touched (exact raw bandwidths kept); changed
+  bands are pending, marked and synced; bandwidths the base holds are kept;
+  Create preset keeps them; Reset and a reload drop them
 
 ## Limitations
 
-- Editing only changes per-band **gain**. Frequency and bandwidth of each
-  band stay fixed at whatever the currently selected template uses.
 - The headset's firmware update path is **not** implemented (no Linux
   tooling exists to flash the A50 base/headset; use the official Windows
   Astro Command Center for that).

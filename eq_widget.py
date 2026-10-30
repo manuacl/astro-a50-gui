@@ -2,11 +2,13 @@
 
 Encapsulates the full EQ presets feature: 3 slot selectors, the
 interactive 5-band bargraph, builtin/user template management
-(create/update/delete), and the Reset / Save / Create-preset buttons.
+(create/update/delete), and the Reset / Advanced… / Save / Create-preset
+buttons.
 
-The widget owns its own state (`_slot_bands`, `_slot_modified`,
-`_slot_pending`, `_user_templates`, `_device_templates`). The main window
-shares its `threading.RLock` and `Device` handle with this widget.
+The widget owns its own state (`_slot_bands`, `_slot_bw_edits`,
+`_slot_modified`, `_slot_pending`, `_user_templates`, `_device_templates`).
+The main window shares its `threading.RLock` and `Device` handle with this
+widget.
 
 Public surface used by the main window:
 - ``reload_under_lock(active_eq_preset)`` — re-read all slots from the device
@@ -43,6 +45,7 @@ from PyQt6.QtWidgets import (
 
 import astroeq
 import themes
+from advanced_eq import AdvancedEqDialog
 from device_handle import DeviceHandle
 from eq_meter import _EqMeter
 from i18n import t
@@ -58,11 +61,19 @@ def _values(preset: dict) -> list[tuple[int, int]]:
     return [(preset["bands"][b][0], preset["gain"][b - 1]) for b in range(1, 6)]
 
 
-def _device_bands(bands: list[tuple[int, int]], ref: dict | None) -> dict:
-    """The visible bands with the reference's bandwidths (the meter edits gains
-    and frequencies only), as written to the device."""
+def _bandwidths(preset: dict) -> dict[int, int]:
+    """A preset's bandwidths of bands 2-4 (bands 1 and 5 are shelves)."""
+    return {b: preset["bands"][b][1] for b in (2, 3, 4)}
+
+
+def _device_bands(bands: list[tuple[int, int]], ref: dict | None,
+                  own: dict[int, int] | None = None) -> dict:
+    """The visible bands as written to the device: their frequencies, and the
+    reference's bandwidths except those set in the advanced settings (`own`).
+    The meter edits the gains only."""
     ref = ref or _EQ_TEMPLATES["MEDIA"]
-    return {b: (bands[b - 1][0], 0 if b in (1, 5) else ref["bands"][b][1])
+    own = own or {}
+    return {b: (bands[b - 1][0], 0 if b in (1, 5) else own.get(b, ref["bands"][b][1]))
             for b in range(1, 6)}
 
 
@@ -84,6 +95,9 @@ class EqTemplatesWidget(QGroupBox):
         self._user_templates: dict[str, dict] = _load_user_templates()
         self._device_templates: dict[int, str | None] = {1: None, 2: None, 3: None}
         self._slot_bands: dict[int, list[tuple[int, int]]] = {1: [], 2: [], 3: []}
+        # Bandwidths of bands 2-4 set in the advanced settings; any other
+        # bandwidth comes from the slot's reference, as before.
+        self._slot_bw_edits: dict[int, dict[int, int]] = {1: {}, 2: {}, 3: {}}
         self._slot_modified: dict[int, set[int]] = {1: set(), 2: set(), 3: set()}
         self._slot_pending: dict[int, set[int]] = {1: set(), 2: set(), 3: set()}
         self._slot_device: dict[int, dict | None] = {1: None, 2: None, 3: None}
@@ -148,6 +162,11 @@ class EqTemplatesWidget(QGroupBox):
         self.btn_reset_eq.clicked.connect(self._on_reset_templates)
         self.btn_reset_eq.setEnabled(False)
         btn_row.addWidget(self.btn_reset_eq)
+        self.btn_advanced_eq = QPushButton(t("btn_advanced_eq"))
+        self.btn_advanced_eq.setToolTip(t("tip_advanced_eq"))
+        self.btn_advanced_eq.clicked.connect(self._on_advanced)
+        self.btn_advanced_eq.setEnabled(False)
+        btn_row.addWidget(self.btn_advanced_eq)
         btn_row.addStretch(1)
         self.btn_save_eq = QPushButton(t("btn_save_eq"))
         self.btn_save_eq.clicked.connect(self._on_update_template)
@@ -184,6 +203,7 @@ class EqTemplatesWidget(QGroupBox):
                 data = self._read_slot(slot)
                 self._slot_device[slot] = data
                 self._slot_bands[slot] = [] if data is None else _values(data)
+                self._slot_bw_edits[slot] = {}
                 self._slot_pending[slot].clear()
             self._rematch()
             self._device_active_eq = active_eq_preset
@@ -218,7 +238,7 @@ class EqTemplatesWidget(QGroupBox):
                     continue
                 name, ref = self._resolve(slot)
                 gain = [g for (_freq, g) in bands]
-                device_bands = _device_bands(bands, ref)
+                device_bands = _device_bands(bands, ref, self._slot_bw_edits[slot])
                 self.device.set_eq_preset_name(slot, name)
                 self.device.set_eq_preset_gain(slot, gain)
                 for b, (freq, bw) in device_bands.items():
@@ -288,6 +308,7 @@ class EqTemplatesWidget(QGroupBox):
         ref = self._reference(slot)
         if ref is not None:
             self._slot_bands[slot] = _values(ref)
+            self._slot_bw_edits[slot] = {}
         # The base's own values, or the template it already holds: nothing to push.
         if desired in (self.ON_DEVICE, self._device_templates.get(slot)) or desired is None:
             self._slot_pending[slot].clear()
@@ -299,6 +320,58 @@ class EqTemplatesWidget(QGroupBox):
         self._update_apply_enabled()
         if self._loading:
             return
+        self._emit_dirty_if_changed()
+
+    def _on_advanced(self) -> None:
+        slot = self._selected_slot
+        bands = self._slot_bands[slot]
+        if not bands:
+            return
+        bw = self._slot_bandwidths(slot)
+        dialog = AdvancedEqDialog(
+            slot, [(freq, bw.get(b, 0)) for b, (freq, _gain) in enumerate(bands, start=1)], self)
+        accepted = dialog.exec()
+        values = dialog.values()
+        dialog.deleteLater()  # a child of this widget: it would stay until the app quits
+        if accepted:
+            self.apply_band_settings(slot, values)
+
+    def _slot_bandwidths(self, slot: int) -> dict[int, int]:
+        """The bandwidths of bands 2-4 the slot holds now: what the base holds
+        while nothing is queued, else the reference's, then those set in the
+        advanced settings. The advanced settings show these."""
+        ref = self._reference(slot) or _EQ_TEMPLATES["MEDIA"]
+        bw = _bandwidths(ref)
+        device = self._slot_device.get(slot)
+        if not self._slot_pending[slot] and device is not None:
+            bw.update(_bandwidths(device))
+        bw.update(self._slot_bw_edits[slot])
+        return bw
+
+    def apply_band_settings(self, slot: int, values: dict[int, tuple[int, int]]) -> None:
+        """Advanced settings: (frequency, raw bandwidth) of each band, 0 for the
+        shelves' bandwidth. Changed bands become pending, like a gain moved on
+        the meter."""
+        bands = self._slot_bands[slot]
+        if not bands:
+            return
+        current = self._slot_bandwidths(slot)
+        changed = {
+            b for b, (freq, bw) in values.items()
+            if freq != bands[b - 1][0] or (b not in (1, 5) and bw != current[b])
+        }
+        if not changed:
+            return
+        for b in changed:
+            bands[b - 1] = (values[b][0], bands[b - 1][1])
+        # Every bandwidth shown is kept, so a Sync writes what the dialog
+        # showed, not the reference's for the bands left as they were.
+        self._slot_bw_edits[slot] = {b: values[b][1] for b in (2, 3, 4)}
+        self._slot_pending[slot] |= changed
+        self._update_modified(slot)
+        if slot == self._selected_slot:
+            self._refresh_meter()
+        self._update_apply_enabled()
         self._emit_dirty_if_changed()
 
     def _on_reset_templates(self) -> None:
@@ -331,6 +404,7 @@ class EqTemplatesWidget(QGroupBox):
             self._slot_pending[s].clear()
             device = self._slot_device.get(s)
             self._slot_bands[s] = _values(device) if device else []
+            self._slot_bw_edits[s] = {}
         self._rematch()
         self._refresh_meter()
         self._update_apply_enabled()
@@ -369,7 +443,7 @@ class EqTemplatesWidget(QGroupBox):
         QApplication.processEvents()
         try:
             gain = [g for (_freq, g) in bands]
-            new_bands = _device_bands(bands, self._reference(slot))
+            new_bands = _device_bands(bands, self._reference(slot), self._slot_bw_edits[slot])
             # Device first: a write it refuses leaves library, disk and combos
             # untouched instead of holding a preset that can never be pushed.
             with self._device_lock:
@@ -546,6 +620,7 @@ class EqTemplatesWidget(QGroupBox):
                 continue  # the base already holds the new definition
             if not self._slot_pending[s]:
                 self._slot_bands[s] = _values(tpl)
+                self._slot_bw_edits[s] = {}
                 self._slot_pending[s] = {1, 2, 3, 4, 5}
             self._update_modified(s)
 
@@ -677,12 +752,16 @@ class EqTemplatesWidget(QGroupBox):
         ref_values = _values(ref)
         # With nothing queued the slot is what the base holds, so its own
         # bandwidths count too (set in Command Center, say). Once a Sync is
-        # queued, it writes the reference's bandwidths.
+        # queued, it writes the reference's bandwidths, except those set in
+        # the advanced settings.
+        own = self._slot_bw_edits[slot]
         device = None if self._slot_pending[slot] else self._slot_device.get(slot)
         self._slot_modified[slot] = {
             b for b in range(1, 6)
             if bands[b - 1] != ref_values[b - 1]
-            or (device is not None and device["bands"][b][1] != ref["bands"][b][1])
+            or (b in own and own[b] != ref["bands"][b][1])
+            or (b not in own and device is not None
+                and device["bands"][b][1] != ref["bands"][b][1])
         }
 
     def _refresh_meter(self) -> None:
@@ -699,6 +778,7 @@ class EqTemplatesWidget(QGroupBox):
         self.btn_save_eq.setEnabled(modified and current_tpl in self._user_templates)
         self.btn_apply_eq.setEnabled(modified)
         self.btn_reset_eq.setEnabled(modified)
+        self.btn_advanced_eq.setEnabled(bool(self._slot_bands.get(slot)))
         for s, btn in self.template_delete_btns.items():
             enabled = self.template_combos[s].currentData() in self._user_templates
             btn.setEnabled(enabled)

@@ -20,7 +20,7 @@ SUFFIX = ".astroeq"
 GAIN_RANGE = (-7, 7)
 FREQ_RANGE = (80, 15_000)
 BANDWIDTH_RANGE = (0.1, 3.0)
-_BANDWIDTH_SCALE = 4096
+BANDWIDTH_SCALE = 4096
 
 
 def parse(text: str) -> dict:
@@ -46,7 +46,7 @@ def parse(text: str) -> dict:
             bandwidth = 0
         else:
             value = _number(section, f"Eq_Bandwidth_{b}", BANDWIDTH_RANGE)
-            bandwidth = round(value * _BANDWIDTH_SCALE)
+            bandwidth = round(value * BANDWIDTH_SCALE)
         bands[b] = (freq, bandwidth)
     return {"gain": gain, "bands": bands}
 
@@ -80,4 +80,4 @@ def _number(section: configparser.SectionProxy, key: str, limits: tuple) -> floa
 
 def _format_bandwidth(raw: int) -> str:
     """8192 -> "2", 9011 -> "2.2": the short decimal Command Center writes."""
-    return f"{raw / _BANDWIDTH_SCALE:.2f}".rstrip("0").rstrip(".")
+    return f"{raw / BANDWIDTH_SCALE:.2f}".rstrip("0").rstrip(".")
