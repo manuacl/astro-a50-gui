@@ -63,18 +63,14 @@ def _values(preset: dict) -> list[tuple[int, int]]:
 
 def _bandwidths(preset: dict) -> dict[int, int]:
     """A preset's bandwidths of bands 2-4 (bands 1 and 5 are shelves)."""
-    return {b: preset["bands"][b][1] for b in (2, 3, 4)}
+    return {b: preset["bands"][b][1] for b in astroeq.BANDWIDTH_BANDS}
 
 
-def _device_bands(bands: list[tuple[int, int]], ref: dict | None,
-                  own: dict[int, int] | None = None) -> dict:
-    """The visible bands as written to the device: their frequencies, and the
-    reference's bandwidths except those set in the advanced settings (`own`).
-    The meter edits the gains only."""
-    ref = ref or _EQ_TEMPLATES["MEDIA"]
-    own = own or {}
-    return {b: (bands[b - 1][0], 0 if b in (1, 5) else own.get(b, ref["bands"][b][1]))
-            for b in range(1, 6)}
+def _device_bands(bands: list[tuple[int, int]], bandwidths: dict[int, int]) -> dict:
+    """The visible bands as written to the device: their frequencies and the
+    slot's bandwidths (`_slot_bandwidths`), 0 for the shelves. The meter edits
+    the gains only."""
+    return {b: (bands[b - 1][0], bandwidths.get(b, 0)) for b in range(1, 6)}
 
 
 class EqTemplatesWidget(QGroupBox):
@@ -236,9 +232,9 @@ class EqTemplatesWidget(QGroupBox):
                 bands = self._slot_bands[slot]
                 if not bands:
                     continue
-                name, ref = self._resolve(slot)
+                name, _ref = self._resolve(slot)
                 gain = [g for (_freq, g) in bands]
-                device_bands = _device_bands(bands, ref, self._slot_bw_edits[slot])
+                device_bands = _device_bands(bands, self._slot_bandwidths(slot))
                 self.device.set_eq_preset_name(slot, name)
                 self.device.set_eq_preset_gain(slot, gain)
                 for b, (freq, bw) in device_bands.items():
@@ -285,6 +281,10 @@ class EqTemplatesWidget(QGroupBox):
             return
         freq, _old = bands[band - 1]
         bands[band - 1] = (freq, gain)
+        if not self._slot_pending[slot]:
+            # A Sync would write the reference's bandwidths: keep those the
+            # slot shows, the base's own included, as the advanced settings do.
+            self._slot_bw_edits[slot] = self._slot_bandwidths(slot)
         self._slot_pending[slot].add(band)
         self._update_modified(slot)
         self._refresh_meter()
@@ -324,17 +324,22 @@ class EqTemplatesWidget(QGroupBox):
 
     def _on_advanced(self) -> None:
         slot = self._selected_slot
-        bands = self._slot_bands[slot]
-        if not bands:
+        shown = self._band_settings(slot)
+        if not shown:
             return
-        bw = self._slot_bandwidths(slot)
-        dialog = AdvancedEqDialog(
-            slot, [(freq, bw.get(b, 0)) for b, (freq, _gain) in enumerate(bands, start=1)], self)
+        dialog = AdvancedEqDialog(slot, shown, self)
         accepted = dialog.exec()
         values = dialog.values()
         dialog.deleteLater()  # a child of this widget: it would stay until the app quits
-        if accepted:
-            self.apply_band_settings(slot, values)
+        # A reload while the dialog was open (the base reconnecting) replaced
+        # what it showed: its values would land on a state the user never saw.
+        if accepted and self._band_settings(slot) == shown:
+            self._apply_band_settings(slot, values)
+
+    def _band_settings(self, slot: int) -> list[tuple[int, int]]:
+        """(frequency, raw bandwidth) of each band, as the advanced settings show them."""
+        bw = self._slot_bandwidths(slot)
+        return [(freq, bw.get(b, 0)) for b, (freq, _gain) in enumerate(self._slot_bands[slot], start=1)]
 
     def _slot_bandwidths(self, slot: int) -> dict[int, int]:
         """The bandwidths of bands 2-4 the slot holds now: what the base holds
@@ -348,7 +353,7 @@ class EqTemplatesWidget(QGroupBox):
         bw.update(self._slot_bw_edits[slot])
         return bw
 
-    def apply_band_settings(self, slot: int, values: dict[int, tuple[int, int]]) -> None:
+    def _apply_band_settings(self, slot: int, values: dict[int, tuple[int, int]]) -> None:
         """Advanced settings: (frequency, raw bandwidth) of each band, 0 for the
         shelves' bandwidth. Changed bands become pending, like a gain moved on
         the meter."""
@@ -358,7 +363,7 @@ class EqTemplatesWidget(QGroupBox):
         current = self._slot_bandwidths(slot)
         changed = {
             b for b, (freq, bw) in values.items()
-            if freq != bands[b - 1][0] or (b not in (1, 5) and bw != current[b])
+            if freq != bands[b - 1][0] or (b in current and bw != current[b])
         }
         if not changed:
             return
@@ -366,7 +371,7 @@ class EqTemplatesWidget(QGroupBox):
             bands[b - 1] = (values[b][0], bands[b - 1][1])
         # Every bandwidth shown is kept, so a Sync writes what the dialog
         # showed, not the reference's for the bands left as they were.
-        self._slot_bw_edits[slot] = {b: values[b][1] for b in (2, 3, 4)}
+        self._slot_bw_edits[slot] = {b: values[b][1] for b in astroeq.BANDWIDTH_BANDS}
         self._slot_pending[slot] |= changed
         self._update_modified(slot)
         if slot == self._selected_slot:
@@ -443,7 +448,7 @@ class EqTemplatesWidget(QGroupBox):
         QApplication.processEvents()
         try:
             gain = [g for (_freq, g) in bands]
-            new_bands = _device_bands(bands, self._reference(slot), self._slot_bw_edits[slot])
+            new_bands = _device_bands(bands, self._slot_bandwidths(slot))
             # Device first: a write it refuses leaves library, disk and combos
             # untouched instead of holding a preset that can never be pushed.
             with self._device_lock:
@@ -750,17 +755,15 @@ class EqTemplatesWidget(QGroupBox):
             self._slot_modified[slot] = set(range(1, 6)) if bands else set()
             return
         ref_values = _values(ref)
-        # With nothing queued the slot is what the base holds, so its own
-        # bandwidths count too (set in Command Center, say). Once a Sync is
-        # queued, it writes the reference's bandwidths, except those set in
-        # the advanced settings.
-        own = self._slot_bw_edits[slot]
+        # The bandwidths count too: _slot_bandwidths says which ones the slot
+        # holds. The shelves' come from the base while nothing is queued.
+        bw = self._slot_bandwidths(slot)
         device = None if self._slot_pending[slot] else self._slot_device.get(slot)
         self._slot_modified[slot] = {
             b for b in range(1, 6)
             if bands[b - 1] != ref_values[b - 1]
-            or (b in own and own[b] != ref["bands"][b][1])
-            or (b not in own and device is not None
+            or (b in bw and bw[b] != ref["bands"][b][1])
+            or (b not in bw and device is not None
                 and device["bands"][b][1] != ref["bands"][b][1])
         }
 
