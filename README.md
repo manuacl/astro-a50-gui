@@ -23,7 +23,7 @@ built on top of the [eh-fifty](https://github.com/tdryer/eh-fifty) library.
 - KDE menu entry installation
 - Base station / headset firmware info dialog
 - Import / export EQ presets as Astro Command Center `.astroeq` files (Tools menu), to move presets between Windows and Linux
-- French, English and Spanish UI (autodetected via locale, override with `A50_LANG=fr|en|es`)
+- French, English and Spanish UI (autodetected via locale, override with `A50_LANG=fr|en|es`). Each language is a `locales/<code>.json` file: drop in a new one and it shows up in the menu. A regional variant (`es_MX.json`) only holds the strings it changes and falls back to its base language, then English
 - Language and colour theme selectable from the Tools menu: Automatic (follows the desktop's colours), Light and Dark (official Breeze palettes). Themes are colour palettes in `themes/` (JSON, Qt palette role → colour) that keep the desktop's look and only change its colours: drop in a new file and it shows up in the menu
 
 ## Install
@@ -100,7 +100,7 @@ The application is split into focused modules:
 | `eq_widget.py`       | `EqTemplatesWidget` — radios + combos + meter + buttons + state for the EQ preset feature |
 | `eq_meter.py`        | `_EqMeter` — interactive 5-band bargraph widget               |
 | `templates.py`       | Builtin `_EQ_TEMPLATES` + user-template JSON persistence      |
-| `i18n.py`            | `TRANSLATIONS` (fr/en/es), `t()`, `_detect_lang()`            |
+| `i18n.py`            | Loads `locales/*.json` into `TRANSLATIONS`, `t()`, `_detect_lang()` |
 | `settings.py`        | Preferences (language, theme) in `settings.json`              |
 | `themes.py`          | Colour themes: Qt palettes loaded from `themes/*.json`        |
 | `raw_request.py`     | Raw HID opcodes outside eh-fifty's public API (FW info etc.)  |
@@ -169,6 +169,7 @@ a JSON library on disk; only their *content* gets pushed to a slot.
   `status_worker.py`, `device_handle.py`, `base_info_dialog.py`,
   `menu_install.py`, `advanced_eq.py` — application code
 - `themes/` — colour palettes for the Theme menu (JSON)
+- `locales/` — one translation file per language (JSON, key → text)
 - `icons/` — the app's icons, from Lucide (SVG, drawn in the palette's text
   colour so they follow the theme); licence in `LICENSE-lucide.txt`
 - `tests.py` — unit tests (run with `.venv/bin/python -m unittest tests.py`)
@@ -187,8 +188,9 @@ Covers:
 - User-template JSON round-trip and malformed-entry tolerance
 - Base info dialog: every value and raw dump shown, a failed read shown as
   n/a with its reason
-- `i18n.t()` lookups, fallback to English, kwargs formatting, same keys and
-  placeholders in every language
+- `i18n.t()` lookups, fallback from a regional variant to its base language
+  and then English, kwargs formatting, same keys and placeholders in every
+  language, variants only using keys of their base
 - Language priority (`A50_LANG`, menu choice, system locale) and when a
   restart is needed
 - `settings.json`: round-trip, atomic writes, corrupt or mistyped content
