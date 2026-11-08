@@ -1,410 +1,63 @@
-"""French / English / Spanish translations for the GUI."""
+"""GUI translations, one locales/<code>.json per language.
+
+Each file maps a key to its text. A regional variant (es_MX.json) only holds
+the keys it changes: a lookup tries the variant, then its base language
+(es.json), then English. Dropping a new file into locales/ adds the language.
+"""
+import json
 import os
+from pathlib import Path
 
 from PyQt6.QtCore import QLocale
 
 import settings
 
-TRANSLATIONS = {
-    "fr": {
-        "window_title": "Astro A50 — Configuration",
-        "grp_status": "Statut",
-        "grp_mic": "Micro",
-        "grp_levels": "Niveaux",
-        "grp_notifications": "Notifications",
-        "grp_eq_templates": "Préréglages EQ",
-        "lbl_eq_slot": "EQ {n}",
-        "btn_apply": "Créer un préréglage",
-        "btn_apply_busy": "Création…",
-        "btn_save_eq": "Sauvegarder",
-        "btn_save_eq_busy": "Sauvegarde…",
-        "btn_reset_eq": "Réinitialiser",
-        "btn_advanced_eq": "Avancé…",
-        "tip_advanced_eq": "Fréquence centrale et largeur de chaque bande de l'EQ sélectionné. Les gains se règlent sur le graphique.",
-        "dlg_advanced_title": "Avancé · EQ {n}",
-        "col_band": "Bande",
-        "col_freq": "Fréquence",
-        "col_bw": "Largeur de bande",
-        "band_n": "Bande {n}",
-        "tip_freq": "Fréquence centrale de la bande : là où son gain agit le plus.",
-        "tip_bw": "Étendue de la bande autour de sa fréquence : plus la valeur est haute, plus elle est large.",
-        "tip_shelf": "Les bandes 1 et 5 montent ou baissent tout ce qui est en dessous (bande 1) ou au-dessus (bande 5) de leur fréquence : elles n'ont pas de largeur.",
-        "btn_delete_eq": "Supprimer",
-        "dlg_delete_preset_title": "Supprimer le préréglage",
-        "dlg_delete_preset_msg": "Supprimer « {name} » ?",
-        "dlg_save_preset_title": "Nouveau préréglage",
-        "dlg_save_preset_label": "Nom du nouveau préréglage :",
-        "dlg_overwrite_user": "Le préréglage « {name} » existe déjà. L'écraser ?",
-        "default_template_name": "Mon préréglage",
-        "err_name_builtin": "« {name} » est un préréglage intégré, choisis un autre nom.",
-        "msg_template_applied": "Préréglage {name} → EQ {slot}",
-        "err_template_apply": "Application impossible : {error}",
-        "err_template_save": "Enregistrement des préréglages impossible : {error}",
-        "err_name_too_long": "Nom trop long : {max} octets au maximum (un accent en compte 2).",
-        "err_menu_remove": "Suppression impossible : {error}",
-        "lbl_eq_preset": "Preset EQ actif",
-        "lbl_game": "Jeu",
-        "lbl_voice": "Voix",
-        "lbl_mic_eq": "Mic EQ",
-        "lbl_noise_gate": "Noise gate",
-        "gate_streaming": "STREAMING",
-        "gate_night": "NIGHT",
-        "gate_home": "HOME",
-        "gate_tournament": "TOURNAMENT",
-        "lbl_alert_volume": "Volume des alertes",
-        "grp_balance": "Balance voix / jeu",
-        "tip_balance": "Mélange actuel entre le son du jeu et le chat vocal, que les boutons de l'écouteur droit modifient à tout moment. Déplacé ici puis synchronisé, il devient le mélange au démarrage du casque.",
-        "tip_noise_gate": "Filtre le bruit de fond du micro. STREAMING laisse presque tout passer, TOURNAMENT est le plus strict, pour les endroits bruyants.",
-        "tip_mic_level": "Volume de la voix envoyée par le micro.",
-        "tip_sidetone": "Niveau de sa propre voix entendue dans le casque en parlant.",
-        "tip_stream_mic": "Volume du micro dans le mix que la base envoie par son port stream, pour enregistrer ou diffuser.",
-        "tip_stream_chat": "Volume du chat vocal dans le mix que la base envoie par son port stream, pour enregistrer ou diffuser.",
-        "tip_stream_game": "Volume du jeu dans le mix que la base envoie par son port stream, pour enregistrer ou diffuser.",
-        "tip_stream_aux": "Volume de l'entrée auxiliaire dans le mix que la base envoie par son port stream, pour enregistrer ou diffuser.",
-        "tip_alert_volume": "Volume des signaux sonores du casque, comme l'alerte de batterie faible.",
-        "lbl_mic_level": "Niveau micro",
-        "lbl_sidetone": "Retour micro",
-        "lbl_stream_mic": "Stream mix · Micro",
-        "lbl_stream_chat": "Stream mix · Chat",
-        "lbl_stream_game": "Stream mix · Jeu",
-        "lbl_stream_aux": "Stream mix · Aux",
-        "btn_refresh": "Rafraîchir",
-        "btn_save": "Synchroniser le dispositif",
-        "btn_save_synced": "Synchronisé",
-        "btn_save_busy": "Synchronisation…",
-        "menu_tools": "&Outils",
-        "act_install_menu": "Installer dans le menu KDE",
-        "act_remove_menu": "Retirer du menu KDE",
-        "act_base_info": "Informations",
-        "act_import_presets": "Importer des préréglages Command Center…",
-        "act_export_preset": "Exporter un préréglage pour Command Center…",
-        "dlg_export_label": "Préréglage à exporter :",
-        "filter_astroeq": "Préréglages EQ Astro Command Center (*.astroeq)",
-        "msg_imported": "Préréglages importés : {n}",
-        "msg_exported": "{name} exporté",
-        "err_import": "Import impossible de {name} : {error}",
-        "err_export": "Export impossible : {error}",
-        "info_hwid": "Matériel",
-        "info_mfg": "Fabrication (date)",
-        "info_fw_base": "Version base",
-        "info_fw_headset": "Version casque",
-        "info_raw_title": "Données brutes",
-        "err_base_info": "Lecture impossible : {error}",
-        "act_about": "À &propos",
-        "about_text": (
-            '<b>Astro A50 Config</b> {version}<br><br>Configuration du casque Astro A50 Gen 4.<br><br><a href="{url}/releases">Versions et nouveautés</a> · <a href="{url}">Code source</a><br><br>Licence GPL-3.0-or-later. Inclut eh-fifty (MIT).'
-        ),
-        "act_quit": "&Quitter",
-        "menu_language": "Langue",
-        "lang_auto": "Automatique (langue du système)",
-        "menu_theme": "Thème",
-        "theme_auto": "Automatique (couleurs du système)",
-        "theme_light": "Clair",
-        "theme_dark": "Sombre",
-        "dlg_restart_title": "Redémarrer",
-        "dlg_restart_msg": "La nouvelle langue s'appliquera au redémarrage. Redémarrer maintenant ?",
-        "dlg_restart_unsaved": "Les changements non synchronisés seront perdus.",
-        "err_restart": "Impossible de redémarrer l'application. Relance-la manuellement.",
-        "err_settings_save": "Impossible d'enregistrer le réglage : {error}",
-        "err_theme": "Impossible de charger le thème {name}, thème automatique utilisé.",
-        "msg_menu_installed": "Entrée ajoutée au menu KDE",
-        "msg_menu_removed": "Entrée retirée du menu KDE",
-        "msg_menu_absent": "Aucune entrée à retirer",
-        "msg_menu_installed_system": "Entrée ajoutée au menu KDE, à la place de celle du paquet installé",
-        "msg_menu_removed_system": "Votre entrée est retirée ; celle du paquet installé reste dans le menu",
-        "msg_menu_absent_system": "L'entrée du menu vient du paquet installé : désinstallez le paquet pour la retirer",
-        "err_menu_install": "Installation impossible : {error}",
-        "desktop_name": "Astro A50 Config",
-        "desktop_comment": "Configurer le casque Astro A50 (EQ, balance, micro, noise gate)",
-        "preset_n": "Preset {n}",
-        "device_preset": "{name} (sur la base)",
-        "headset_on": "Casque ON",
-        "headset_off": "Casque OFF",
-        "docked": "Sur dock",
-        "undocked": "Hors dock",
-        "charging": " (charge)",
-        "base_unreachable": "● Base injoignable",
-        "msg_loaded": "Lecture terminée",
-        "msg_eq_set": "Preset EQ → {name}",
-        "msg_saved": "Réglages sauvegardés dans la base",
-        "err_title": "Erreur",
-        "err_save": "Sauvegarde impossible : {error}",
-        "err_open_title": "Astro A50",
-        "err_open": "Impossible d'ouvrir la base A50 :\n{error}\n\n"
-                    "Vérifie que la base est branchée en USB et le switch sur PC.",
-        "na": "n/a",
-    },
-    "en": {
-        "window_title": "Astro A50 — Configuration",
-        "grp_status": "Status",
-        "grp_mic": "Microphone",
-        "grp_levels": "Levels",
-        "grp_notifications": "Notifications",
-        "grp_eq_templates": "EQ templates",
-        "lbl_eq_slot": "EQ {n}",
-        "btn_apply": "Create preset",
-        "btn_apply_busy": "Creating…",
-        "btn_save_eq": "Save",
-        "btn_save_eq_busy": "Saving…",
-        "btn_reset_eq": "Reset",
-        "btn_advanced_eq": "Advanced…",
-        "tip_advanced_eq": "Centre frequency and bandwidth of each band of the selected EQ. The meter sets the gains.",
-        "dlg_advanced_title": "Advanced · EQ {n}",
-        "col_band": "Band",
-        "col_freq": "Frequency",
-        "col_bw": "Bandwidth",
-        "band_n": "Band {n}",
-        "tip_freq": "Centre frequency of the band, where its gain acts the most.",
-        "tip_bw": "How wide the band is around its frequency: the higher, the wider.",
-        "tip_shelf": "Bands 1 and 5 raise or lower everything below (band 1) or above (band 5) their frequency, so they have no bandwidth.",
-        "btn_delete_eq": "Delete",
-        "dlg_delete_preset_title": "Delete preset",
-        "dlg_delete_preset_msg": "Delete \"{name}\"?",
-        "dlg_save_preset_title": "New preset",
-        "dlg_save_preset_label": "Name for the new preset:",
-        "dlg_overwrite_user": "Preset \"{name}\" already exists. Overwrite?",
-        "default_template_name": "My preset",
-        "err_name_builtin": "\"{name}\" is a builtin preset, choose another name.",
-        "msg_template_applied": "Template {name} → EQ {slot}",
-        "err_template_apply": "Apply failed: {error}",
-        "err_template_save": "Could not save the presets: {error}",
-        "err_name_too_long": "Name too long: {max} bytes at most (an accented letter counts as 2).",
-        "err_menu_remove": "Remove failed: {error}",
-        "lbl_eq_preset": "Active EQ preset",
-        "lbl_game": "Game",
-        "lbl_voice": "Voice",
-        "lbl_mic_eq": "Mic EQ",
-        "lbl_noise_gate": "Noise gate",
-        "gate_streaming": "STREAMING",
-        "gate_night": "NIGHT",
-        "gate_home": "HOME",
-        "gate_tournament": "TOURNAMENT",
-        "lbl_alert_volume": "Alert volume",
-        "grp_balance": "Voice / game balance",
-        "tip_balance": "Current mix between game audio and voice chat, which the buttons on the right ear cup change at any time. Moved here and synced, it becomes the mix the headset starts with.",
-        "tip_noise_gate": "Filters background noise from the microphone. STREAMING lets almost everything through; TOURNAMENT is the strictest, for noisy places.",
-        "tip_mic_level": "How loud your voice is sent.",
-        "tip_sidetone": "How much of your own voice you hear in the headset while talking.",
-        "tip_stream_mic": "Microphone volume in the mix the base sends through its stream port, for recording or streaming.",
-        "tip_stream_chat": "Voice chat volume in the mix the base sends through its stream port, for recording or streaming.",
-        "tip_stream_game": "Game volume in the mix the base sends through its stream port, for recording or streaming.",
-        "tip_stream_aux": "Aux input volume in the mix the base sends through its stream port, for recording or streaming.",
-        "tip_alert_volume": "Volume of the headset's prompts, such as the low battery alert.",
-        "lbl_mic_level": "Mic level",
-        "lbl_sidetone": "Sidetone",
-        "lbl_stream_mic": "Stream mix · Mic",
-        "lbl_stream_chat": "Stream mix · Chat",
-        "lbl_stream_game": "Stream mix · Game",
-        "lbl_stream_aux": "Stream mix · Aux",
-        "btn_refresh": "Refresh",
-        "btn_save": "Sync to device",
-        "btn_save_synced": "In sync",
-        "btn_save_busy": "Syncing…",
-        "menu_tools": "&Tools",
-        "act_install_menu": "Install in KDE menu",
-        "act_remove_menu": "Remove from KDE menu",
-        "act_base_info": "Information",
-        "act_import_presets": "Import Command Center presets…",
-        "act_export_preset": "Export preset for Command Center…",
-        "dlg_export_label": "Preset to export:",
-        "filter_astroeq": "Astro Command Center EQ presets (*.astroeq)",
-        "msg_imported": "Presets imported: {n}",
-        "msg_exported": "Exported {name}",
-        "err_import": "Could not import {name}: {error}",
-        "err_export": "Export failed: {error}",
-        "info_hwid": "Hardware",
-        "info_mfg": "Manufactured (date)",
-        "info_fw_base": "Base version",
-        "info_fw_headset": "Headset version",
-        "info_raw_title": "Raw responses",
-        "err_base_info": "Read failed: {error}",
-        "act_about": "&About",
-        "about_text": (
-            '<b>Astro A50 Config</b> {version}<br><br>Configuration for the Astro A50 Gen 4 headset.<br><br><a href="{url}/releases">Releases and changes</a> · <a href="{url}">Source code</a><br><br>Licensed under GPL-3.0-or-later. Includes eh-fifty (MIT).'
-        ),
-        "act_quit": "&Quit",
-        "menu_language": "Language",
-        "lang_auto": "Automatic (system language)",
-        "menu_theme": "Theme",
-        "theme_auto": "Automatic (system colours)",
-        "theme_light": "Light",
-        "theme_dark": "Dark",
-        "dlg_restart_title": "Restart",
-        "dlg_restart_msg": "The new language applies after a restart. Restart now?",
-        "dlg_restart_unsaved": "Unsynced changes will be lost.",
-        "err_restart": "Could not restart the application. Please start it again manually.",
-        "err_settings_save": "Could not save the setting: {error}",
-        "err_theme": "Could not load the {name} theme, using Automatic.",
-        "msg_menu_installed": "Added to the KDE menu",
-        "msg_menu_removed": "Removed from the KDE menu",
-        "msg_menu_absent": "Nothing to remove",
-        "msg_menu_installed_system": "Added to the KDE menu, in place of the installed package's entry",
-        "msg_menu_removed_system": "Your entry is removed; the installed package's entry stays in the menu",
-        "msg_menu_absent_system": "The menu entry comes from the installed package: uninstall the package to remove it",
-        "err_menu_install": "Install failed: {error}",
-        "desktop_name": "Astro A50 Config",
-        "desktop_comment": "Configure the Astro A50 headset (EQ, balance, mic, noise gate)",
-        "preset_n": "Preset {n}",
-        "device_preset": "{name} (on the base)",
-        "headset_on": "Headset ON",
-        "headset_off": "Headset OFF",
-        "docked": "Docked",
-        "undocked": "Undocked",
-        "charging": " (charging)",
-        "base_unreachable": "● Base unreachable",
-        "msg_loaded": "Loaded",
-        "msg_eq_set": "EQ preset → {name}",
-        "msg_saved": "Settings saved to base station",
-        "err_title": "Error",
-        "err_save": "Save failed: {error}",
-        "err_open_title": "Astro A50",
-        "err_open": "Cannot open the A50 base:\n{error}\n\n"
-                    "Check that the base is plugged in via USB and the switch is on PC.",
-        "na": "n/a",
-    },
-    "es": {
-        "window_title": "Astro A50 — Configuración",
-        "grp_status": "Estado",
-        "grp_mic": "Micrófono",
-        "grp_levels": "Niveles",
-        "grp_notifications": "Notificaciones",
-        "grp_eq_templates": "Preajustes de ecualizador",
-        "lbl_eq_slot": "EQ {n}",
-        "btn_apply": "Crear preajuste",
-        "btn_apply_busy": "Creando…",
-        "btn_save_eq": "Guardar",
-        "btn_save_eq_busy": "Guardando…",
-        "btn_reset_eq": "Revertir",
-        "btn_advanced_eq": "Avanzado…",
-        "tip_advanced_eq": "Frecuencia central y ancho de cada banda del EQ seleccionado. Las ganancias se ajustan en la gráfica.",
-        "dlg_advanced_title": "Avanzado · EQ {n}",
-        "col_band": "Banda",
-        "col_freq": "Frecuencia",
-        "col_bw": "Ancho de banda",
-        "band_n": "Banda {n}",
-        "tip_freq": "Frecuencia central de la banda, donde más actúa su ganancia.",
-        "tip_bw": "Cuánto abarca la banda alrededor de su frecuencia: cuanto más alto, más ancha.",
-        "tip_shelf": "Las bandas 1 y 5 suben o bajan todo lo que queda por debajo (banda 1) o por encima (banda 5) de su frecuencia, así que no tienen ancho.",
-        "btn_delete_eq": "Eliminar",
-        "dlg_delete_preset_title": "Eliminar preajuste",
-        "dlg_delete_preset_msg": "¿Eliminar «{name}»?",
-        "dlg_save_preset_title": "Nuevo preajuste",
-        "dlg_save_preset_label": "Nombre del nuevo preajuste:",
-        "dlg_overwrite_user": "El preajuste «{name}» ya existe. ¿Sobrescribirlo?",
-        "default_template_name": "Mi preajuste",
-        "err_name_builtin": "«{name}» es un preajuste integrado, elige otro nombre.",
-        "msg_template_applied": "Preajuste {name} → EQ {slot}",
-        "err_template_apply": "No se pudo aplicar: {error}",
-        "err_template_save": "No se pudieron guardar los preajustes: {error}",
-        "err_name_too_long": "Nombre demasiado largo: {max} bytes como máximo (una letra con tilde cuenta 2).",
-        "err_menu_remove": "No se pudo quitar del menú: {error}",
-        "lbl_eq_preset": "Preajuste de EQ activo",
-        "lbl_game": "Juego",
-        "lbl_voice": "Voz",
-        "lbl_mic_eq": "EQ del micrófono",
-        "lbl_noise_gate": "Bloqueador de ruido",
-        "gate_streaming": "STREAMING",
-        "gate_night": "NOCHE",
-        "gate_home": "CASA",
-        "gate_tournament": "TORNEO",
-        "lbl_alert_volume": "Volumen de alerta",
-        "grp_balance": "Balance voz / juego",
-        "tip_balance": "Mezcla actual entre el audio del juego y el chat de voz, que los botones del auricular derecho cambian en cualquier momento. Movida aquí y sincronizada, pasa a ser la mezcla con la que arrancan los auriculares.",
-        "tip_noise_gate": "Filtra el ruido de fondo del micrófono. STREAMING deja pasar casi todo y TORNEO es el más estricto, para sitios ruidosos.",
-        "tip_mic_level": "Volumen con el que se envía tu voz.",
-        "tip_sidetone": "Cuánto te oyes a ti mismo en los cascos al hablar.",
-        "tip_stream_mic": "Volumen del micrófono en la mezcla que la base envía por su puerto de stream, para grabar o emitir.",
-        "tip_stream_chat": "Volumen del chat de voz en la mezcla que la base envía por su puerto de stream, para grabar o emitir.",
-        "tip_stream_game": "Volumen del juego en la mezcla que la base envía por su puerto de stream, para grabar o emitir.",
-        "tip_stream_aux": "Volumen de la entrada auxiliar en la mezcla que la base envía por su puerto de stream, para grabar o emitir.",
-        "tip_alert_volume": "Volumen de los avisos de los auriculares, como el de batería baja.",
-        "lbl_mic_level": "Nivel de micrófono",
-        "lbl_sidetone": "Retorno de voz",
-        "lbl_stream_mic": "Puerto de stream · Micrófono",
-        "lbl_stream_chat": "Puerto de stream · Audio de chat",
-        "lbl_stream_game": "Puerto de stream · Juego",
-        "lbl_stream_aux": "Puerto de stream · Aux",
-        "btn_refresh": "Actualizar",
-        "btn_save": "Sincronizar con dispositivo",
-        "btn_save_synced": "Sincronizado",
-        "btn_save_busy": "Sincronizando…",
-        "menu_tools": "&Herramientas",
-        "act_install_menu": "Añadir al menú de KDE",
-        "act_remove_menu": "Quitar del menú de KDE",
-        "act_base_info": "Información",
-        "act_import_presets": "Importar preajustes de Command Center…",
-        "act_export_preset": "Exportar preajuste para Command Center…",
-        "dlg_export_label": "Preajuste que exportar:",
-        "filter_astroeq": "Preajustes de EQ de Astro Command Center (*.astroeq)",
-        "msg_imported": "Preajustes importados: {n}",
-        "msg_exported": "Exportado {name}",
-        "err_import": "No se pudo importar {name}: {error}",
-        "err_export": "No se pudo exportar: {error}",
-        "info_hwid": "Hardware",
-        "info_mfg": "Fecha de fabricación",
-        "info_fw_base": "Versión FW estación base",
-        "info_fw_headset": "Versión FW auriculares",
-        "info_raw_title": "Respuestas en bruto",
-        "err_base_info": "No se pudo leer: {error}",
-        "act_about": "&Acerca de",
-        "about_text": (
-            '<b>Astro A50 Config</b> {version}<br><br>Configuración de los auriculares Astro A50 Gen 4.<br><br><a href="{url}/releases">Versiones y novedades</a> · <a href="{url}">Código fuente</a><br><br>Licencia GPL-3.0-or-later. Incluye eh-fifty (MIT).'
-        ),
-        "act_quit": "&Salir",
-        "menu_language": "Idioma",
-        "lang_auto": "Automático (idioma del sistema)",
-        "menu_theme": "Tema",
-        "theme_auto": "Automático (colores del sistema)",
-        "theme_light": "Claro",
-        "theme_dark": "Oscuro",
-        "dlg_restart_title": "Reiniciar",
-        "dlg_restart_msg": "El nuevo idioma se aplicará al reiniciar. ¿Reiniciar ahora?",
-        "dlg_restart_unsaved": "Los cambios sin sincronizar se perderán.",
-        "err_restart": "No se pudo reiniciar la aplicación. Vuelve a abrirla manualmente.",
-        "err_settings_save": "No se pudo guardar el ajuste: {error}",
-        "err_theme": "No se pudo cargar el tema {name}; se usa Automático.",
-        "msg_menu_installed": "Añadido al menú de KDE",
-        "msg_menu_removed": "Quitado del menú de KDE",
-        "msg_menu_absent": "No hay nada que quitar",
-        "msg_menu_installed_system": "Añadido al menú de KDE, en lugar de la entrada del paquete instalado",
-        "msg_menu_removed_system": "Tu entrada se ha quitado; la del paquete instalado sigue en el menú",
-        "msg_menu_absent_system": "La entrada del menú viene del paquete instalado: desinstala el paquete para quitarla",
-        "err_menu_install": "No se pudo añadir al menú: {error}",
-        "desktop_name": "Configuración del Astro A50",
-        "desktop_comment": "Configura los auriculares Astro A50 (EQ, balance, micrófono, bloqueador de ruido)",
-        "preset_n": "Preajuste {n}",
-        "device_preset": "{name} (en la base)",
-        "headset_on": "Auriculares encendidos",
-        "headset_off": "Auriculares apagados",
-        "docked": "En la base",
-        "undocked": "Fuera de la base",
-        "charging": " (cargando)",
-        "base_unreachable": "● Estación base no accesible",
-        "msg_loaded": "Cargado",
-        "msg_eq_set": "Preajuste de EQ → {name}",
-        "msg_saved": "Ajustes guardados en la estación base",
-        "err_title": "Error",
-        "err_save": "No se pudo guardar: {error}",
-        "err_open_title": "Astro A50",
-        "err_open": "No se puede abrir la estación base del A50:\n{error}\n\n"
-                    "Comprueba que la estación base está conectada por USB y que el interruptor está en PC.",
-        "na": "n/d",
-    },
-}
+LOCALES_DIR = Path(__file__).resolve().parent / "locales"
+
+
+def _load(locales_dir: Path) -> dict[str, dict[str, str]]:
+    return {
+        path.stem: json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(locales_dir.glob("*.json"))
+    }
+
+
+TRANSLATIONS = _load(LOCALES_DIR)
+
+
+def _chain(code: str) -> list[str]:
+    """Languages a lookup in `code` tries, in order: es_MX, es, en."""
+    chain = [code, code.split("_")[0], "en"]
+    return [c for i, c in enumerate(chain) if c in TRANSLATIONS and c not in chain[:i]]
+
+
+def _lookup(code: str, key: str) -> str | None:
+    for lang in _chain(code):
+        if text := TRANSLATIONS[lang].get(key):
+            return text
+    return None
+
+
+def _match(name: str) -> str | None:
+    """The best language for a locale name: "es_MX" and "es-MX" give es_MX, else es."""
+    lang, _, region = name.replace("-", "_").partition("_")
+    code = f"{lang.lower()}_{region.upper()}" if region else lang.lower()
+    for candidate in (code, lang.lower()):
+        if candidate in TRANSLATIONS:
+            return candidate
+    return None
 
 
 # Shown in the language menu in their own language, whatever the UI language is.
-LANGUAGE_NAMES = {"en": "English", "es": "Español", "fr": "Français"}
+LANGUAGE_NAMES = {code: _lookup(code, "language_name") or code for code in TRANSLATIONS}
 
 def _system_lang() -> str:
-    lang = QLocale.system().name().split("_")[0]
-    return lang if lang in TRANSLATIONS else "en"
+    return _match(QLocale.system().name()) or "en"
 
 
 def _detect_lang() -> str:
-    # "es", "es_ES" and "es-ES" all mean Spanish, like the system locale.
-    override = os.environ.get("A50_LANG", "").lower().replace("-", "_").split("_")[0]
-    if override in TRANSLATIONS:
+    override = _match(os.environ.get("A50_LANG", ""))
+    if override:
         return override
     saved = settings.get("language", "auto")
     if saved in TRANSLATIONS:
@@ -431,5 +84,5 @@ def gate_label(mode_name: str) -> str:
 
 
 def t(key: str, **kwargs) -> str:
-    s = TRANSLATIONS.get(LANG, TRANSLATIONS["en"]).get(key) or TRANSLATIONS["en"].get(key, key)
+    s = _lookup(LANG, key) or key
     return s.format(**kwargs) if kwargs else s

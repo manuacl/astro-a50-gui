@@ -171,8 +171,48 @@ class I18nTest(unittest.TestCase):
     def test_every_language_has_the_same_keys_as_en(self):
         reference = set(i18n.TRANSLATIONS["en"])
         for lang, strings in i18n.TRANSLATIONS.items():
+            if "_" in lang:
+                continue  # regional variants only hold what they change
             with self.subTest(lang=lang):
                 self.assertEqual(set(strings), reference)
+
+    def test_variants_only_use_keys_of_their_base(self):
+        for lang, strings in i18n.TRANSLATIONS.items():
+            if "_" not in lang:
+                continue
+            base = lang.split("_")[0]
+            with self.subTest(lang=lang):
+                self.assertIn(base, i18n.TRANSLATIONS)
+                self.assertLessEqual(set(strings), set(i18n.TRANSLATIONS[base]))
+
+    def test_regional_variant_falls_back_to_base_then_en(self):
+        with (
+            mock.patch.dict(i18n.TRANSLATIONS, {"es_MX": {"btn_refresh": "Refrescar"}}),
+            mock.patch.dict(i18n.TRANSLATIONS["es"]),
+            mock.patch.object(i18n, "LANG", "es_MX"),
+        ):
+            i18n.TRANSLATIONS["es"].pop("err_title")
+            self.assertEqual(i18n.t("btn_refresh"), "Refrescar")
+            self.assertEqual(i18n.t("gate_tournament"), "TORNEO")
+            self.assertEqual(i18n.t("err_title"), "Error")
+
+    def test_locale_name_picks_the_variant_then_its_base(self):
+        with mock.patch.dict(i18n.TRANSLATIONS, {"es_MX": {}}):
+            self.assertEqual(i18n._match("es_MX"), "es_MX")
+            self.assertEqual(i18n._match("es-mx"), "es_MX")
+            self.assertEqual(i18n._match("es_AR"), "es")
+            self.assertIsNone(i18n._match("de_DE"))
+            self.assertIsNone(i18n._match(""))
+
+    def test_language_names_come_from_the_locale_files(self):
+        self.assertEqual(set(i18n.LANGUAGE_NAMES), set(i18n.TRANSLATIONS))
+        self.assertEqual(i18n.LANGUAGE_NAMES["es"], "Español")
+
+    def test_locale_files_are_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("en.json", "es_MX.json"):
+                Path(tmp, name).write_text(json.dumps({"err_title": "Error"}), encoding="utf-8")
+            self.assertEqual(set(i18n._load(Path(tmp))), {"en", "es_MX"})
 
     def test_placeholders_match_en(self):
         # A misspelled or extra placeholder raises KeyError at runtime; a missing
