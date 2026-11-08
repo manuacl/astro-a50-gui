@@ -208,11 +208,44 @@ class I18nTest(unittest.TestCase):
         self.assertEqual(set(i18n.LANGUAGE_NAMES), set(i18n.TRANSLATIONS))
         self.assertEqual(i18n.LANGUAGE_NAMES["es"], "Español")
 
+    def test_every_locale_file_names_its_own_language(self):
+        # The menu name is never inherited: es_MX without one would show a second "Español".
+        names = [strings.get("language_name") for strings in i18n.TRANSLATIONS.values()]
+        self.assertNotIn(None, names)
+        self.assertEqual(len(names), len(set(names)))
+
     def test_locale_files_are_loaded(self):
         with tempfile.TemporaryDirectory() as tmp:
             for name in ("en.json", "es_MX.json"):
                 Path(tmp, name).write_text(json.dumps({"err_title": "Error"}), encoding="utf-8")
             self.assertEqual(set(i18n._load(Path(tmp))), {"en", "es_MX"})
+
+    def test_locale_file_names_are_normalised_like_locales(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("pt_br.json", "DE.json"):
+                Path(tmp, name).write_text("{}", encoding="utf-8")
+            loaded = i18n._load(Path(tmp))
+        self.assertEqual(set(loaded), {"en", "pt_BR", "de"})
+        with mock.patch.object(i18n, "TRANSLATIONS", loaded):
+            self.assertEqual(i18n._match("pt_BR"), "pt_BR")
+            self.assertEqual(i18n._match("de_AT"), "de")
+
+    def test_broken_locale_files_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in {
+                "en.json": '{"err_title": "Error"}',
+                "xx.json": "oops",
+                "yy.json": "[]",
+                "zz.json": '{"err_title": null}',
+                "auto.json": "{}",
+            }.items():
+                Path(tmp, name).write_text(text, encoding="utf-8")
+            with self.assertLogs(i18n.LOGGER, "WARNING"):
+                self.assertEqual(set(i18n._load(Path(tmp))), {"en"})
+
+    def test_missing_locales_folder_still_has_english(self):
+        with tempfile.TemporaryDirectory() as tmp, self.assertLogs(i18n.LOGGER, "WARNING"):
+            self.assertEqual(i18n._load(Path(tmp, "missing")), {"en": {}})
 
     def test_placeholders_match_en(self):
         # A misspelled or extra placeholder raises KeyError at runtime; a missing
