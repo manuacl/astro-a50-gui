@@ -3,6 +3,7 @@
 Each file maps a key to its text. A regional variant (es_MX.json) only holds
 the keys it changes: a lookup tries the variant, then its base language
 (es.json), then English. Dropping a new file into locales/ adds the language.
+A broken file or key is skipped and logged instead of stopping the app.
 """
 import json
 import logging
