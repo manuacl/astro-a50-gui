@@ -236,12 +236,38 @@ class I18nTest(unittest.TestCase):
                 "en.json": '{"err_title": "Error"}',
                 "xx.json": "oops",
                 "yy.json": "[]",
-                "zz.json": '{"err_title": null}',
+                "zz.json": '{"err_title": null, "btn_refresh": "Zz"}',
                 "auto.json": "{}",
             }.items():
                 Path(tmp, name).write_text(text, encoding="utf-8")
-            with self.assertLogs(i18n.LOGGER, "WARNING"):
-                self.assertEqual(set(i18n._load(Path(tmp))), {"en"})
+            with self.assertLogs(i18n.LOGGER, "WARNING") as logs:
+                loaded = i18n._load(Path(tmp))
+        self.assertEqual(set(loaded), {"en", "zz"})
+        self.assertEqual(loaded["zz"], {"btn_refresh": "Zz"})  # only the bad key goes
+        for name in ("xx.json", "yy.json", "zz.json", "auto.json"):
+            self.assertEqual(sum(name in line for line in logs.output), 1, name)
+
+    def test_locale_file_with_bom_is_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "de.json").write_text('{"err_title": "Fehler"}', encoding="utf-8-sig")
+            self.assertEqual(i18n._load(Path(tmp))["de"], {"err_title": "Fehler"})
+
+    def test_two_files_for_one_code_are_logged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("es-mx.json", "es_MX.json"):
+                Path(tmp, name).write_text("{}", encoding="utf-8")
+            with self.assertLogs(i18n.LOGGER, "WARNING") as logs:
+                i18n._load(Path(tmp))
+        self.assertIn("es_MX", logs.output[0])
+
+    def test_bad_placeholder_falls_back_to_english(self):
+        with (
+            mock.patch.dict(i18n.TRANSLATIONS, {"de": {"msg_eq_set": "{nme} gesetzt", "err_save": "{"}}),
+            mock.patch.object(i18n, "LANG", "de"),
+            self.assertLogs(i18n.LOGGER, "WARNING"),
+        ):
+            self.assertEqual(i18n.t("msg_eq_set", name="MEDIA"), "EQ preset → MEDIA")
+            self.assertEqual(i18n.t("err_save", error="x"), "Save failed: x")
 
     def test_missing_locales_folder_still_has_english(self):
         with tempfile.TemporaryDirectory() as tmp, self.assertLogs(i18n.LOGGER, "WARNING"):

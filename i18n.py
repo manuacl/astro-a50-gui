@@ -34,13 +34,18 @@ def _load(locales_dir: Path) -> dict[str, dict[str, str]]:
                 LOGGER.warning("Skipping %s: 'auto' is reserved", path.name)
                 continue
             try:
-                strings = json.loads(path.read_text(encoding="utf-8"))
+                strings = json.loads(path.read_text(encoding="utf-8-sig"))
             except (OSError, ValueError) as exc:
                 LOGGER.warning("Skipping %s: %s", path.name, exc)
                 continue
-            if not isinstance(strings, dict) or not all(isinstance(v, str) for v in strings.values()):
-                LOGGER.warning("Skipping %s: not a JSON object of strings", path.name)
+            if not isinstance(strings, dict):
+                LOGGER.warning("Skipping %s: not a JSON object", path.name)
                 continue
+            if bad := [k for k, v in strings.items() if not isinstance(v, str)]:
+                LOGGER.warning("Ignoring non-text keys in %s: %s", path.name, ", ".join(bad))
+                strings = {k: v for k, v in strings.items() if isinstance(v, str)}
+            if code in translations:
+                LOGGER.warning("%s replaces another file for %s", path.name, code)
             translations[code] = strings
     else:
         LOGGER.warning("No locales folder at %s", locales_dir)
@@ -110,4 +115,12 @@ def gate_label(mode_name: str) -> str:
 
 def t(key: str, **kwargs) -> str:
     s = _lookup(LANG, key) or key
-    return s.format(**kwargs) if kwargs else s
+    if not kwargs:
+        return s
+    # A dropped-in file may hold a bad placeholder: fall back to English, then to the raw text.
+    for text in (s, TRANSLATIONS["en"].get(key, key)):
+        try:
+            return text.format(**kwargs)
+        except (AttributeError, IndexError, KeyError, ValueError) as exc:
+            LOGGER.warning("Bad placeholder in %s: %r", key, exc)
+    return s
