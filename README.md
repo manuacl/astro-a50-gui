@@ -23,7 +23,7 @@ built on top of the [eh-fifty](https://github.com/tdryer/eh-fifty) library.
 - KDE menu entry installation
 - Base station / headset firmware info dialog
 - Import / export EQ presets as Astro Command Center `.astroeq` files (Tools menu), to move presets between Windows and Linux
-- French, English and Spanish UI (autodetected via locale, override with `A50_LANG=fr|en|es`). Each language is a `locales/<code>.json` file: drop in a new one and it shows up in the menu. A regional variant (`es_MX.json`) only holds the strings it changes and falls back to its base language, then English
+- French, English and Spanish UI (autodetected via locale, override with `A50_LANG=fr|en|es`). Each language is a `locales/<code>.json` file: drop in a new one and it shows up in the menu. A regional variant (`es_MX.json`) only holds the strings it changes and falls back to its base language, then English. File names are matched like locale names (`pt_br.json` is `pt_BR`); each file needs its own `language_name`. A file that isn't valid JSON is skipped, a non-text value drops only its key, and a string whose placeholders don't fit falls back to English; each case logs a warning
 - Language and colour theme selectable from the Tools menu: Automatic (follows the desktop's colours), Light and Dark (official Breeze palettes). Themes are colour palettes in `themes/` (JSON, Qt palette role → colour) that keep the desktop's look and only change its colours: drop in a new file and it shows up in the menu
 
 ## Install
@@ -191,7 +191,11 @@ Covers:
   n/a with its reason
 - `i18n.t()` lookups, fallback from a regional variant to its base language
   and then English, kwargs formatting, same keys and placeholders in every
-  language, variants only using keys of their base
+  language, variants only using keys of their base, every locale file naming
+  its own language
+- Locale loading: file names normalised like locale names, broken files and
+  non-text keys skipped with one warning each, BOM accepted, a missing
+  folder still gives English, a bad placeholder falls back to English
 - Language priority (`A50_LANG`, menu choice, system locale) and when a
   restart is needed
 - `settings.json`: round-trip, atomic writes, corrupt or mistyped content

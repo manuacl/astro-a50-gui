@@ -3,8 +3,10 @@
 Each file maps a key to its text. A regional variant (es_MX.json) only holds
 the keys it changes: a lookup tries the variant, then its base language
 (es.json), then English. Dropping a new file into locales/ adds the language.
+A broken file or key is skipped and logged instead of stopping the app.
 """
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -13,13 +15,44 @@ from PyQt6.QtCore import QLocale
 import settings
 
 LOCALES_DIR = Path(__file__).resolve().parent / "locales"
+LOGGER = logging.getLogger(__name__)
+
+
+def _code(name: str) -> str:
+    """Canonical language code for a file or locale name: "es-mx" gives es_MX."""
+    lang, _, region = name.replace("-", "_").partition("_")
+    return f"{lang.lower()}_{region.upper()}" if region else lang.lower()
 
 
 def _load(locales_dir: Path) -> dict[str, dict[str, str]]:
-    return {
-        path.stem: json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(locales_dir.glob("*.json"))
-    }
+    """Every readable locale file. A broken one is skipped and logged, so a
+    dropped-in file can't stop the app from starting."""
+    translations = {}
+    if locales_dir.is_dir():
+        for path in sorted(locales_dir.glob("*.json")):
+            code = _code(path.stem)
+            if code == "auto":  # the language menu's own "auto" choice
+                LOGGER.warning("Skipping %s: 'auto' is reserved", path.name)
+                continue
+            try:
+                strings = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError) as exc:
+                LOGGER.warning("Skipping %s: %s", path.name, exc)
+                continue
+            if not isinstance(strings, dict):
+                LOGGER.warning("Skipping %s: not a JSON object", path.name)
+                continue
+            if bad := [k for k, v in strings.items() if not isinstance(v, str)]:
+                LOGGER.warning("Ignoring non-text keys in %s: %s", path.name, ", ".join(bad))
+                strings = {k: v for k, v in strings.items() if isinstance(v, str)}
+            if code in translations:
+                LOGGER.warning("%s replaces another file for %s", path.name, code)
+            translations[code] = strings
+    else:
+        LOGGER.warning("No locales folder at %s", locales_dir)
+    # English is every lookup's last resort: without it the UI shows raw keys.
+    translations.setdefault("en", {})
+    return translations
 
 
 TRANSLATIONS = _load(LOCALES_DIR)
@@ -27,8 +60,7 @@ TRANSLATIONS = _load(LOCALES_DIR)
 
 def _chain(code: str) -> list[str]:
     """Languages a lookup in `code` tries, in order: es_MX, es, en."""
-    chain = [code, code.split("_")[0], "en"]
-    return [c for i, c in enumerate(chain) if c in TRANSLATIONS and c not in chain[:i]]
+    return [c for c in dict.fromkeys((code, code.split("_")[0], "en")) if c in TRANSLATIONS]
 
 
 def _lookup(code: str, key: str) -> str | None:
@@ -40,16 +72,15 @@ def _lookup(code: str, key: str) -> str | None:
 
 def _match(name: str) -> str | None:
     """The best language for a locale name: "es_MX" and "es-MX" give es_MX, else es."""
-    lang, _, region = name.replace("-", "_").partition("_")
-    code = f"{lang.lower()}_{region.upper()}" if region else lang.lower()
-    for candidate in (code, lang.lower()):
+    code = _code(name)
+    for candidate in (code, code.split("_")[0]):
         if candidate in TRANSLATIONS:
             return candidate
     return None
 
 
 # Shown in the language menu in their own language, whatever the UI language is.
-LANGUAGE_NAMES = {code: _lookup(code, "language_name") or code for code in TRANSLATIONS}
+LANGUAGE_NAMES = {code: TRANSLATIONS[code].get("language_name") or code for code in TRANSLATIONS}
 
 def _system_lang() -> str:
     return _match(QLocale.system().name()) or "en"
@@ -85,4 +116,12 @@ def gate_label(mode_name: str) -> str:
 
 def t(key: str, **kwargs) -> str:
     s = _lookup(LANG, key) or key
-    return s.format(**kwargs) if kwargs else s
+    if not kwargs:
+        return s
+    # A dropped-in file may hold a bad placeholder: fall back to English, then to the raw text.
+    for text in (s, TRANSLATIONS["en"].get(key, key)):
+        try:
+            return text.format(**kwargs)
+        except (AttributeError, IndexError, KeyError, ValueError) as exc:
+            LOGGER.warning("Bad placeholder in %s: %r", key, exc)
+    return s
