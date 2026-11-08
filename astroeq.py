@@ -21,6 +21,8 @@ GAIN_RANGE = (-7, 7)
 FREQ_RANGE = (80, 15_000)
 BANDWIDTH_RANGE = (0.1, 3.0)
 BANDWIDTH_SCALE = 4096
+SHELVES = (1, 5)  # low and high shelves: no bandwidth
+BANDWIDTH_BANDS = (2, 3, 4)
 
 
 def parse(text: str) -> dict:
@@ -42,11 +44,10 @@ def parse(text: str) -> dict:
     bands = {}
     for b in range(1, 6):
         freq = round(_number(section, f"Eq_Freq_Band_{b}", FREQ_RANGE))
-        if b in (1, 5):
+        if b in SHELVES:
             bandwidth = 0
         else:
-            value = _number(section, f"Eq_Bandwidth_{b}", BANDWIDTH_RANGE)
-            bandwidth = round(value * BANDWIDTH_SCALE)
+            bandwidth = raw_bandwidth(_number(section, f"Eq_Bandwidth_{b}", BANDWIDTH_RANGE))
         bands[b] = (freq, bandwidth)
     return {"gain": gain, "bands": bands}
 
@@ -57,7 +58,7 @@ def dump(name: str, template: dict) -> str:
     lines = ["[General]", f"Name={name}", "", "[Eq_Bands]"]
     lines += [f"Eq_Band_{b}={g}" for b, g in enumerate(template["gain"], start=1)]
     lines += [f"Eq_Freq_Band_{b}={bands[b][0]}" for b in range(1, 6)]
-    lines += [f"Eq_Bandwidth_{b}={_format_bandwidth(bands[b][1])}" for b in (2, 3, 4)]
+    lines += [f"Eq_Bandwidth_{b}={_format_bandwidth(bands[b][1])}" for b in BANDWIDTH_BANDS]
     return "\r\n".join(lines) + "\r\n"
 
 
@@ -76,6 +77,11 @@ def _number(section: configparser.SectionProxy, key: str, limits: tuple) -> floa
         msg = f"{key}={raw} is outside {low}..{high}"
         raise ValueError(msg)
     return value
+
+
+def raw_bandwidth(value: float) -> int:
+    """2.2 -> 9011: a bandwidth as eh-fifty stores it."""
+    return round(value * BANDWIDTH_SCALE)
 
 
 def _format_bandwidth(raw: int) -> str:

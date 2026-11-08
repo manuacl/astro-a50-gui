@@ -133,7 +133,8 @@ a JSON library on disk; only their *content* gets pushed to a slot.
   (headset icon). User presets show a star icon and a trash button which is
   invisible (opacity 0) on builtins.
 - **Drag** a bar vertically in the bargraph to change a band's gain. Modified
-  bars turn orange.
+  bars turn orange. Bandwidths the base holds (set in Command Center, say)
+  are kept; picking a template or Reset brings back the template's.
 - **Réinitialiser**: discard local edits, reload the template's original
   values. Enabled only when bars are modified.
 - **Avancé…**: set each band's centre frequency (80-15000 Hz) and,
@@ -213,12 +214,14 @@ Covers:
   pending)
 - `_persist_and_push` save/create flow: user preset added or overwritten,
   one `_save_user_templates` call, device receives name/gain/5 bands/
-  `save_values`, slot state reset, bandwidths inherited from the previous
-  template (shelf bands 1 and 5 forced to 0)
+  `save_values`, slot state reset, the bandwidths the slot shows (shelf
+  bands 1 and 5 forced to 0)
 - Advanced EQ settings: the dialog uses eh-fifty's limits and gives back
-  what it showed when nothing is touched (exact raw bandwidths kept); changed
-  bands are pending, marked and synced; bandwidths the base holds are kept;
-  Create preset keeps them; Reset and a reload drop them
+  what it showed when nothing is touched (exact raw bandwidths kept, values
+  out of range included); changed bands are pending, marked and synced;
+  bandwidths the base holds are kept, by the dialog, a gain drag and Create
+  preset alike; Reset, a reload, and a reload while the dialog is open drop
+  them
 
 ## Limitations
 
