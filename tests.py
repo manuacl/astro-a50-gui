@@ -2493,9 +2493,9 @@ class SweepRegressionTest(unittest.TestCase):
 
 class BalanceAndHelpTest(unittest.TestCase):
     def test_balance_slider_is_the_game_percentage(self):
-        # eh-fifty: 0 is all game, 255 all voice.
-        self.assertEqual(gui.game_percent(0), 100)
-        self.assertEqual(gui.game_percent(255), 0)
+        # The headset: 0 is all voice, 255 all game.
+        self.assertEqual(gui.game_percent(0), 0)
+        self.assertEqual(gui.game_percent(255), 100)
         self.assertEqual(gui.game_percent(128), 50)
         for game in range(101):
             with self.subTest(game=game):
