@@ -122,7 +122,9 @@ def safe(call, default=None):
 
 
 class A50Window(QMainWindow):
-    REFRESH_INTERVAL_MS = 5000
+    # Short enough to follow the headset buttons (balance, active EQ) as
+    # they are pressed: those two reads take about 100 ms (see StatusWorker).
+    REFRESH_INTERVAL_MS = 250
 
     _SYNC_STYLE_DIRTY = (
         "QPushButton { background-color: #FF9800; color: white; "
@@ -146,6 +148,11 @@ class A50Window(QMainWindow):
         # The settings controls' values as last read from or written to the
         # device: Sync is due while they differ (see _controls).
         self._synced: dict = {}
+        # The live balance as last read: the headset buttons changed it when a
+        # poll reads another value (see _on_live_values).
+        self._live_balance: int | None = None
+        # A poll was asked of the worker and hasn't answered yet.
+        self._poll_pending = False
         # The device is shared between the main UI thread, the EQ widget,
         # and the status worker thread; the lock serialises USB HID access.
         # RLock allows nested acquisitions (reload_all wraps refresh_status).
@@ -181,6 +188,7 @@ class A50Window(QMainWindow):
         self._status_worker = StatusWorker(device, self._device_lock)
         self._status_worker.moveToThread(self._status_thread)
         self._status_worker.statusReady.connect(self._on_status_ready)
+        self._status_worker.liveValuesReady.connect(self._on_live_values)
         self._status_worker.reconnected.connect(self._on_reconnected)
         self._status_thread.start()
 
@@ -563,6 +571,7 @@ class A50Window(QMainWindow):
                 active = safe(self.device.get_active_eq_preset)
                 self.eq.reload_under_lock(active)
                 balance = safe(self.device.get_balance)
+                self._live_balance = balance
                 gate = safe(self.device.get_noise_gate_mode)
                 alert = safe(self.device.get_alert_volume)
                 slider_values = {
@@ -620,7 +629,13 @@ class A50Window(QMainWindow):
         self._update_status_display(status, battery)
 
     def _trigger_async_status(self):
-        """Tell the worker thread to refresh status without blocking the UI."""
+        """Tell the worker thread to refresh status without blocking the UI.
+
+        Skipped while the last poll hasn't answered: a slow one, or a burst of
+        writes holding the lock, must not leave polls queued behind it."""
+        if self._poll_pending:
+            return
+        self._poll_pending = True
         QMetaObject.invokeMethod(
             self._status_worker, "refresh",
             Qt.ConnectionType.QueuedConnection,
@@ -629,6 +644,29 @@ class A50Window(QMainWindow):
     def _on_status_ready(self, status, battery):
         """Slot called by the worker thread when a status poll completes."""
         self._update_status_display(status, battery)
+
+    def _on_live_values(self, balance, active):
+        """Follow the balance and the active EQ the headset buttons changed,
+        in controls without unsynced edits (issue #16).
+
+        The slider follows a change of the live balance, not a difference
+        from it: Sync writes the default balance, which can leave the live
+        one where the buttons put it, and the slider must not jump back."""
+        self._poll_pending = False
+        if balance is not None and balance != self._live_balance:
+            self._live_balance = balance
+            if (self.sld_balance.isEnabled()
+                    and self.sld_balance.value() == self._synced.get("balance")):
+                game = game_percent(balance)
+                self._loading = True
+                try:
+                    self.sld_balance.setValue(game)
+                finally:
+                    self._loading = False
+                # Read from the device, like reload_all: nothing for Sync to write.
+                self._synced["balance"] = game
+        self.eq.follow_active_eq(active)
+        self._apply_sync_style()
 
     def _on_reconnected(self):
         """The worker reopened the base: load what the failed reads left out.
@@ -729,13 +767,14 @@ class A50Window(QMainWindow):
         return super().event(event)
 
     def changeEvent(self, event):
-        if event.type() == QEvent.Type.ActivationChange:
-            if self.isActiveWindow():
-                if not self.refresh_timer.isActive():
-                    self.refresh_status()
-                    self.refresh_timer.start(self.REFRESH_INTERVAL_MS)
-            else:
+        # The poll follows the headset buttons, so it keeps going while the
+        # window can be seen, focused or not, and stops only when minimized.
+        if event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
                 self.refresh_timer.stop()
+            elif not self.refresh_timer.isActive():
+                self.refresh_status()
+                self.refresh_timer.start(self.REFRESH_INTERVAL_MS)
         super().changeEvent(event)
 
     def closeEvent(self, event):

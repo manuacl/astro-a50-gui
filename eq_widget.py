@@ -16,6 +16,8 @@ Public surface used by the main window:
 - ``push_pending_to_device()`` — push the visible bands of every pending
   slot to the device (auto-saving user presets, leaving builtins untouched).
   Caller must hold ``self._device_lock``.
+- ``follow_active_eq(active_eq_preset)`` — check the slot the headset buttons
+  made active, unless the user picked another one that is still unsynced.
 - ``selected_slot`` property — slot index (1..3) of the currently checked radio.
 - ``has_pending() -> bool`` — True if any slot has unsynced changes.
 - Signal ``dirty_changed(bool)`` — emitted when the global dirty state changes
@@ -206,6 +208,28 @@ class EqTemplatesWidget(QGroupBox):
             if active_eq_preset is not None and active_eq_preset in self.template_radios:
                 self.template_radios[active_eq_preset].setChecked(True)
                 self._selected_slot = active_eq_preset
+            self._refresh_meter()
+            self._update_apply_enabled()
+        finally:
+            self._loading = False
+        self._emit_dirty_if_changed()
+
+    def follow_active_eq(self, active_eq_preset: int | None) -> None:
+        """The headset buttons made another EQ slot active: check its radio.
+
+        Left alone while a radio the user picked is still unsynced, or while
+        the device's active slot was never read. Edited bands stay pending:
+        they belong to their slot, not to the radio."""
+        if (active_eq_preset is None or self._device_active_eq is None
+                or active_eq_preset == self._device_active_eq
+                or active_eq_preset not in self.template_radios
+                or self._selected_slot != self._device_active_eq):
+            return
+        self._loading = True
+        try:
+            self._device_active_eq = active_eq_preset
+            self.template_radios[active_eq_preset].setChecked(True)
+            self._selected_slot = active_eq_preset
             self._refresh_meter()
             self._update_apply_enabled()
         finally:

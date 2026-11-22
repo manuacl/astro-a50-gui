@@ -2386,8 +2386,9 @@ class SweepRegressionTest(unittest.TestCase):
         device.get_battery_status.side_effect = [usb.core.USBError("gone"), "battery"]
         device.reopen.return_value = True
         worker = status_worker.StatusWorker.__new__(status_worker.StatusWorker)
-        worker._device, worker._lock = device, threading.RLock()
+        worker._device, worker._lock, worker._polls = device, threading.RLock(), 0
         worker.statusReady = mock.MagicMock()
+        worker.liveValuesReady = mock.MagicMock()
         worker.reconnected = mock.MagicMock()
         worker.refresh()
         device.reopen.assert_called_once_with()
@@ -2401,8 +2402,9 @@ class SweepRegressionTest(unittest.TestCase):
         device = mock.MagicMock()
         device.get_headset_status.side_effect = AssertionError()
         worker = status_worker.StatusWorker.__new__(status_worker.StatusWorker)
-        worker._device, worker._lock = device, threading.RLock()
+        worker._device, worker._lock, worker._polls = device, threading.RLock(), 0
         worker.statusReady = mock.MagicMock()
+        worker.liveValuesReady = mock.MagicMock()
         worker.reconnected = mock.MagicMock()
         worker.refresh()
         device.reopen.assert_not_called()
@@ -2550,6 +2552,159 @@ class BalanceAndHelpTest(unittest.TestCase):
             # None found: Qt's own fallback for the first name.
             themes.icon("x", "y")
             from_theme.assert_called_with("x")
+
+
+class FollowHeadsetTest(unittest.TestCase):
+    """The window follows the balance and the active EQ changed with the
+    headset buttons, without touching unsynced edits (issue #16)."""
+
+    def test_worker_reads_the_balance_and_the_active_eq(self):
+        import threading
+
+        import status_worker
+        device = mock.MagicMock()
+        device.get_balance.return_value = 113
+        device.get_active_eq_preset.side_effect = AssertionError()  # ERROR answer
+        worker = status_worker.StatusWorker.__new__(status_worker.StatusWorker)
+        worker._device, worker._lock, worker._polls = device, threading.RLock(), 0
+        worker.statusReady = mock.MagicMock()
+        worker.liveValuesReady = mock.MagicMock()
+        worker.reconnected = mock.MagicMock()
+        worker.refresh()
+        worker.liveValuesReady.emit.assert_called_once_with(113, None)
+        device.reopen.assert_not_called()
+
+    def test_worker_reads_the_slow_status_every_few_polls(self):
+        import threading
+
+        import status_worker
+        device = mock.MagicMock()
+        worker = status_worker.StatusWorker.__new__(status_worker.StatusWorker)
+        worker._device, worker._lock, worker._polls = device, threading.RLock(), 0
+        worker.statusReady = mock.MagicMock()
+        worker.liveValuesReady = mock.MagicMock()
+        worker.reconnected = mock.MagicMock()
+        polls = 2 * worker.STATUS_EVERY
+        for _ in range(polls):
+            worker.refresh()
+        self.assertEqual(device.get_balance.call_count, polls)
+        self.assertEqual(device.get_active_eq_preset.call_count, polls)
+        self.assertEqual(device.get_headset_status.call_count, 2)
+        self.assertEqual(device.get_battery_status.call_count, 2)
+        self.assertEqual(worker.statusReady.emit.call_count, 2)
+
+    def test_no_poll_is_queued_while_one_is_pending(self):
+        window = mock.MagicMock()
+        window._poll_pending = False
+        with mock.patch.object(gui.QMetaObject, "invokeMethod") as invoke:
+            gui.A50Window._trigger_async_status(window)
+            gui.A50Window._trigger_async_status(window)
+            self.assertEqual(invoke.call_count, 1)
+            window.sld_balance.isEnabled.return_value = False
+            gui.A50Window._on_live_values(window, None, None)  # the poll answered
+            gui.A50Window._trigger_async_status(window)
+            self.assertEqual(invoke.call_count, 2)
+
+    class _Slider:
+        def __init__(self, value):
+            self.v = value
+
+        def setValue(self, value):
+            self.v = value
+
+        def value(self):
+            return self.v
+
+        def isEnabled(self):
+            return True
+
+    def _window(self, game=50, live=128):
+        window = mock.MagicMock()
+        window._loading = False
+        window.sld_balance = self._Slider(game)
+        window._synced = {"balance": game}
+        window._live_balance = live
+        return window
+
+    def test_balance_follows_the_headset_buttons(self):
+        window = self._window()
+        gui.A50Window._on_live_values(window, 255, None)  # game button to the end
+        self.assertEqual(window.sld_balance.value(), 100)
+        # Read from the device: Sync has nothing to write.
+        self.assertEqual(window._synced["balance"], 100)
+        self.assertEqual(window._live_balance, 255)
+        self.assertFalse(window._loading)
+
+    def test_unsynced_balance_is_left_alone(self):
+        window = self._window()
+        window.sld_balance.setValue(20)  # moved by the user, not synced
+        gui.A50Window._on_live_values(window, 0, None)
+        self.assertEqual(window.sld_balance.value(), 20)
+        self.assertEqual(window._synced["balance"], 50)
+
+    def test_slider_does_not_jump_back_after_sync(self):
+        # Sync wrote the default balance; the live one stayed at 128.
+        window = self._window(game=20, live=128)
+        gui.A50Window._on_live_values(window, 128, None)
+        self.assertEqual(window.sld_balance.value(), 20)
+
+    def test_failed_read_changes_nothing(self):
+        window = self._window()
+        gui.A50Window._on_live_values(window, None, None)
+        self.assertEqual(window.sld_balance.value(), 50)
+        self.assertEqual(window._live_balance, 128)
+        window.eq.follow_active_eq.assert_called_once_with(None)
+
+    def test_poll_keeps_going_unfocused_and_stops_when_minimized(self):
+        from PyQt6.QtCore import QEvent
+        window = mock.MagicMock(spec=gui.A50Window)  # for super()
+        window.refresh_timer = mock.MagicMock()
+        activation = QEvent(QEvent.Type.ActivationChange)
+        state = QEvent(QEvent.Type.WindowStateChange)
+        with mock.patch.object(gui.QMainWindow, "changeEvent"):
+            window.isActiveWindow.return_value = False
+            gui.A50Window.changeEvent(window, activation)
+            window.refresh_timer.stop.assert_not_called()
+            window.isMinimized.return_value = True
+            gui.A50Window.changeEvent(window, state)
+            window.refresh_timer.stop.assert_called_once_with()
+            window.isMinimized.return_value = False
+            window.refresh_timer.isActive.return_value = False
+            gui.A50Window.changeEvent(window, state)
+            window.refresh_timer.start.assert_called_once_with(window.REFRESH_INTERVAL_MS)
+
+    def _eq(self, selected=1, device_active=1):
+        widget = EqTemplatesWidget.__new__(EqTemplatesWidget)
+        widget._loading = False
+        widget._selected_slot = selected
+        widget._device_active_eq = device_active
+        widget.template_radios = {slot: _MockRadio() for slot in (1, 2, 3)}
+        widget._refresh_meter = mock.MagicMock()
+        widget._update_apply_enabled = mock.MagicMock()
+        widget._emit_dirty_if_changed = mock.MagicMock()
+        return widget
+
+    def test_active_eq_follows_the_headset_buttons(self):
+        widget = self._eq()
+        widget.follow_active_eq(3)
+        self.assertTrue(widget.template_radios[3].checked)
+        self.assertEqual((widget._selected_slot, widget._device_active_eq), (3, 3))
+        widget._refresh_meter.assert_called_once()
+        self.assertFalse(widget._loading)
+
+    def test_unsynced_radio_is_left_alone(self):
+        widget = self._eq(selected=2, device_active=1)  # the user picked slot 2
+        widget.follow_active_eq(3)
+        self.assertFalse(widget.template_radios[3].checked)
+        self.assertEqual((widget._selected_slot, widget._device_active_eq), (2, 1))
+
+    def test_unread_or_failed_active_eq_changes_nothing(self):
+        for device_active, active in ((None, 3), (1, None), (1, 1)):
+            with self.subTest(device_active=device_active, active=active):
+                widget = self._eq(device_active=device_active)
+                widget.follow_active_eq(active)
+                widget._refresh_meter.assert_not_called()
+                self.assertEqual(widget._device_active_eq, device_active)
 
 
 if __name__ == "__main__":
