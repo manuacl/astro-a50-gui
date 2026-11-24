@@ -102,13 +102,16 @@ def _slider_types():
 
 
 def game_percent(balance: int) -> int:
-    """eh-fifty's balance (0 = all game, 255 = all voice) as the game percentage."""
-    return round((255 - balance) * 100 / 255)
+    """eh-fifty's balance as the game percentage.
+
+    The headset sends 0 for all voice and 255 for all game: its game button
+    raises the value. eh-fifty's docstrings say the reverse."""
+    return round(balance * 100 / 255)
 
 
 def balance_from_game_percent(game: int) -> int:
     """The eh-fifty balance for a game percentage."""
-    return 255 - round(game * 255 / 100)
+    return round(game * 255 / 100)
 
 
 def safe(call, default=None):
@@ -202,8 +205,8 @@ class A50Window(QMainWindow):
         box = QGroupBox(t("grp_balance"))
         layout = QHBoxLayout(box)
         # The slider is the game percentage: voice on the left, game on the
-        # right, like the headset's buttons. eh-fifty's 0-255 (0 = all game)
-        # is only converted when reading from and writing to the device.
+        # right, like the headset's buttons. The device's 0-255 (0 = all voice)
+        # is only converted when reading from and writing to it.
         self.sld_balance = QSlider(Qt.Orientation.Horizontal)
         self.sld_balance.setRange(0, 100)
         self.sld_balance.setSingleStep(1)
