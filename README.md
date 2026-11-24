@@ -8,6 +8,7 @@ built on top of the [eh-fifty](https://github.com/tdryer/eh-fifty) library.
 - Headset status (power, dock, battery) — polled asynchronously, never
   blocks the UI thread
 - Game/voice balance, noise gate (with mode icons), alert volume
+- Follows the balance and the active EQ changed with the headset buttons
 - Stream mix sliders (mic / chat / game / aux) for the analog Stream-out port
 - EQ presets with the 5 builtin Astro Command Center templates
   (A50 MOD KIT, ASTRO, MEDIA, PRO, STUDIO), reverse-engineered via USB capture
@@ -105,7 +106,7 @@ The application is split into focused modules:
 | `themes.py`          | Colour themes: Qt palettes loaded from `themes/*.json`        |
 | `raw_request.py`     | Raw HID opcodes outside eh-fifty's public API (FW info etc.)  |
 | `process_lock.py`    | Single-instance helper (`/proc` scan, kill stale GUIs)        |
-| `status_worker.py`   | `QObject` worker polling status on a `QThread`                |
+| `status_worker.py`   | `QObject` worker polling status, balance, EQ on a `QThread`   |
 | `device_handle.py`   | Reopenable handle on the base, shared by all of the above     |
 | `base_info_dialog.py`| Formats the "Informations base" dialog content                |
 | `menu_install.py`    | KDE menu entry install / remove (.desktop file)               |
@@ -113,11 +114,13 @@ The application is split into focused modules:
 ### Threading model
 
 The A50 device handle is shared between the main UI thread and a background
-`QThread` running `StatusWorker`. The worker performs the periodic status
-polls (`get_headset_status` + `get_battery_status`) so they never freeze the
-UI. A `threading.RLock` serialises every USB access — the worker takes it
-during its poll, and the main thread takes it around its own bursts
-(`reload_all`, `_on_save`, template save / push, firmware-info dialog).
+`QThread` running `StatusWorker`. The worker performs the periodic polls so
+they never freeze the UI: `get_balance` + `get_active_eq_preset`, which the
+headset buttons change, every 250 ms, and the slower `get_headset_status` +
+`get_battery_status` every 5 s. A `threading.RLock` serialises every USB
+access — the worker takes it during its poll, and the main thread takes it
+around its own bursts (`reload_all`, `_on_save`, template save / push,
+firmware-info dialog).
 
 ## EQ workflow
 
