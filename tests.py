@@ -2128,8 +2128,8 @@ class SweepRegressionTest(unittest.TestCase):
                 gui.A50Window._on_save(window)
 
         gui.A50Window.reload_all(window)
-        # 113 (set with the headset buttons) is recorded as 56% game...
-        self.assertEqual(window._synced["balance"], gui.game_percent(113))
+        # 113 (set with the headset buttons) is recorded as 44% game...
+        self.assertEqual(window._synced["balance"], 44)
         # ...so Sync with the slider untouched writes nothing, not a rounded 112.
         sync()
         window.device.set_default_balance.assert_not_called()
